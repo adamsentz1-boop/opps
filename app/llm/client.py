@@ -33,10 +33,10 @@ class LLMError(RuntimeError):
 class LLMClient:
     """Thin wrapper around the Anthropic client with a mock fallback."""
 
-    def __init__(self, mock: bool | None = None):
+    def __init__(self, mock: bool | None = None, model: str | None = None, effort: str | None = None):
         settings = get_settings()
-        self.model = settings.claude_model
-        self.effort = settings.claude_effort
+        self.model = model or settings.claude_model
+        self.effort = effort if effort is not None else settings.claude_effort
         self.max_tokens = settings.claude_max_tokens
         self.mock = (not settings.llm_enabled) if mock is None else mock
         self._client = None

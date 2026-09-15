@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Market Challenge · Opportunity Engine{% endblock %}
+{% block content %}
+{% set s = state %}
+<h1>{{ challenge.name }} <span class="pill {{ challenge.status|status_class }}">{{ challenge.status }}</span></h1>
+<p class="disclaimer">Research and proposals only. Opportunity Engine has <strong>no brokerage connection</strong>: it cannot buy, sell or move money. You execute approved trades yourself and record the fills here.{% if market_mock %} <span class="warn">Market data: MOCK (deterministic fake prices).</span>{% endif %}</p>
+
+<div class="hero market">
+  <div class="item big"><div class="k">Portfolio value</div><div class="v">{{ s.portfolio_value|money2 }}</div></div>
+  <div class="item"><div class="k">Starting capital</div><div class="v">{{ s.starting_cash|money2 }}</div></div>
+  <div class="item"><div class="k">Target</div><div class="v">{{ s.target_value|money2 }}</div></div>
+  <div class="item"><div class="k">Goal progress</div><div class="v {{ s.goal_progress_pct|pnl_class }}">{{ '%.1f'|format(s.goal_progress_pct) }}%</div></div>
+  <div class="item"><div class="k">Cash</div><div class="v">{{ s.cash|money2 }}</div></div>
+  <div class="item"><div class="k">Today</div><div class="v {{ s.today_change|pnl_class }}">{{ s.today_change|signed_money }}</div></div>
+  <div class="item"><div class="k">Total return</div><div class="v {{ s.total_return_pct|pnl_class }}">{{ '%+.2f'|format(s.total_return_pct) }}%</div></div>
+  <div class="item"><div class="k">Days remaining</div><div class="v">{{ s.days_remaining }}</div><small>to {{ s.target_date }}</small></div>
+</div>
+
+<div class="card progress-wrap">
+  <div class="progress-labels"><span>{{ s.starting_cash|money2 }}</span><span>{{ s.target_value|money2 }}</span></div>
+  <div class="progress"><i style="width:{{ bar }}%"></i></div>
+  <div class="progress-marker" style="left:{{ bar }}%">▲ {{ s.portfolio_value|money2 }}</div>
+  <div class="progress-labels" style="margin-top:22px"><small>realised P&amp;L <span class="{{ s.realized_pnl|pnl_class }}">{{ s.realized_pnl|signed_money }}</span> · unrealised <span class="{{ s.unrealized_pnl|pnl_class }}">{{ s.unrealized_pnl|signed_money }}</span></small><small>The target is an objective, not a forecast.</small></div>
+</div>
+
+<div class="actions" style="margin-top:12px">
+  <form method="post" action="/market/scan"><button class="btn edit">RUN MARKET SCAN</button></form>
+  <form method="post" action="/market/refresh"><button class="btn">Refresh quotes</button></form>
+  <a class="btn" href="/market/settings">Watchlist &amp; settings</a>
+  <span class="muted" style="align-self:center">Scheduler: {{ 'on' if sched.enabled else 'off' }} · every {{ sched.interval_minutes }} min{% if sched.next_run %} · next {{ sched.next_run|dt }}{% endif %}{% if sched.scanning %} · <strong class="warn">scanning…</strong>{% endif %} · watchlist: {{ watch_count }} ticker(s)</span>
+</div>
+{% if not watch_count %}<div class="notice">The watchlist is empty, so scans have nothing to research. <a href="/market/settings">Add tickers</a> you are willing to consider (the system never seeds recommendations).</div>{% endif %}
+
+<h2 id="positions">Positions</h2>
+<div class="card"><table>
+<tr><th>Ticker</th><th class="num">Shares</th><th class="num">Avg cost</th><th class="num">Current price</th><th class="num">Market value</th><th class="num">Gain / loss</th><th class="num">Weight</th><th>Quote</th></tr>
+{% for p in positions %}{% set q = snaps.get(p.ticker) %}
+<tr><td><strong>{{ p.ticker }}</strong></td><td class="num">{{ p.quantity|qty }}</td><td class="num">{{ p.average_cost|money2 }}</td>
+<td class="num">{{ p.current_price|money2 }}{% if q and q.change_pct is not none %} <small class="{{ q.change_pct|pnl_class }}">{{ '%+.2f'|format(q.change_pct) }}%</small>{% endif %}</td>
+<td class="num">{{ p.market_value|money2 }}</td><td class="num {{ p.unrealized_pnl|pnl_class }}">{{ p.unrealized_pnl|signed_money }} ({{ '%+.1f'|format(p.unrealized_pnl_pct) }}%)</td>
+<td class="num">{{ '%.1f'|format(p.market_value / s.portfolio_value * 100 if s.portfolio_value else 0) }}%</td><td><small>{{ q.captured_at|dt if q else 'no quote yet' }}</small></td></tr>
+{% else %}<tr><td colspan="8" class="muted">No positions. Cash {{ s.cash|money2 }}.</td></tr>{% endfor %}
+</table></div>
+
+<h2 id="awaiting">Awaiting approval <small>({{ awaiting|length }})</small></h2>
+{% for p in awaiting %}
+<div class="card trade-card {{ p.side|lower }}">
+  <div class="head"><span class="side {{ p.side|lower }}">{{ p.side }} {{ p.ticker }}</span>
+    <span class="muted">proposed {{ p.created_at|dt }}{% if p.expires_at %} · expires {{ p.expires_at|dt }}{% endif %} · by {{ p.created_by }}{% if p.edited_by_owner %} · edited by you{% endif %} · <a href="/market/proposals/{{ p.id }}">details</a></span></div>
+  <div class="kv">
+    <div><div class="k">Proposed {{ 'investment' if p.side == 'BUY' else 'sale' }}</div><div class="v">{{ p.estimated_total|money2 }}</div></div>
+    <div><div class="k">Current price</div><div class="v">{{ p.estimated_price|money2 }}</div></div>
+    <div><div class="k">Quantity</div><div class="v">{{ p.quantity|qty }}</div></div>
+    <div><div class="k">Confidence</div><div class="v {{ p.confidence|score_class }}">{{ p.confidence }}%</div></div>
+    <div><div class="k">Risk / reward</div><div class="v">{{ '%.1f'|format(p.risk_reward_ratio) }}x</div></div>
+    <div><div class="k">Upside / downside</div><div class="v"><span class="good">+{{ '%.0f'|format(p.expected_upside_pct) }}%</span> / <span class="bad">-{{ '%.0f'|format(p.expected_downside_pct) }}%</span></div></div>
+    <div><div class="k">Cash after</div><div class="v">{{ p.portfolio_after.cash|money2 }}</div></div>
+    <div><div class="k">Horizon</div><div class="v">{{ p.time_horizon or '-' }}</div></div>
+  </div>
+  <div class="why">
+    <div><div class="k">Why now</div><div class="v">{{ p.reason_for_trade or p.thesis }}</div></div>
+    <div><div class="k">Upside case</div><div class="v">{{ p.bull_case or '-' }}</div></div>
+    <div><div class="k">Downside case</div><div class="v">{{ p.bear_case or '-' }}</div></div>
+    <div><div class="k">Catalysts</div><div class="v">{% if p.catalysts %}<ul class="tight">{% for c in p.catalysts %}<li>{{ c }}</li>{% endfor %}</ul>{% else %}-{% endif %}</div></div>
+    <div><div class="k">Risks</div><div class="v">{% if p.risks %}<ul class="tight">{% for r in p.risks %}<li>{{ r }}</li>{% endfor %}</ul>{% else %}-{% endif %}</div></div>
+  </div>
+  {% if p.thesis and p.reason_for_trade %}<details><summary>Thesis</summary><pre>{{ p.thesis }}</pre></details>{% endif %}
+  <div class="actions">
+    <form method="post" action="/market/proposals/{{ p.id }}/approve"><input type="text" name="notes" placeholder="notes (optional)"><button class="btn approve">APPROVE</button></form>
+    <form method="post" action="/market/proposals/{{ p.id }}/reject"><input type="text" name="notes" placeholder="why?"><button class="btn reject">REJECT</button></form>
+    <a class="btn edit" href="/market/proposals/{{ p.id }}#edit">EDIT</a>
+    <form method="post" action="/market/proposals/{{ p.id }}/reanalyze"><button class="btn">REANALYZE</button></form>
+  </div>
+  <small>Approving records an immutable approval and does <strong>not</strong> place an order.</small>
+</div>
+{% else %}<div class="card muted">Nothing awaiting approval. Run a market scan to have the agents research the watchlist.</div>{% endfor %}
+
+<h2 id="approved">Approved trades awaiting fill <small>({{ approved|length }})</small></h2>
+{% if approved %}<div class="notice good">Approved — execute these trades manually with your broker, then record the fill.</div>{% endif %}
+<div class="card"><table>
+<tr><th>Trade</th><th class="num">Quantity</th><th class="num">Est. price</th><th class="num">Est. total</th><th>Approved</th><th></th></tr>
+{% for p in approved %}
+<tr><td><strong class="side {{ p.side|lower }}">APPROVED {{ p.side }} {{ p.ticker }}</strong> <small><a href="/market/proposals/{{ p.id }}">details</a></small></td><td class="num">{{ p.quantity|qty }}</td><td class="num">{{ p.estimated_price|money2 }}</td><td class="num">{{ p.estimated_total|money2 }}</td><td>{{ p.decided_at|dt }}</td>
+<td><div class="actions" style="margin:0"><a class="btn approve" href="/market/proposals/{{ p.id }}/fill">RECORD FILL</a>
+<form method="post" action="/market/proposals/{{ p.id }}/cancel"><button class="btn small">Cancel</button></form></div></td></tr>
+{% else %}<tr><td colspan="6" class="muted">None.</td></tr>{% endfor %}
+</table></div>
+
+<h2 id="history">Trade history <small>(fills you recorded)</small></h2>
+<div class="card"><table>
+<tr><th>Executed</th><th>Side</th><th>Ticker</th><th class="num">Quantity</th><th class="num">Fill price</th><th class="num">Fees</th><th class="num">Total</th><th class="num">Realised P&amp;L</th><th>Entered by</th></tr>
+{% for e in fills %}
+<tr><td>{{ e.executed_at|dt }}</td><td class="side {{ e.side|lower }}">{{ e.side }}</td><td><a href="/market/proposals/{{ e.trade_proposal_id }}">{{ e.ticker }}</a></td><td class="num">{{ e.quantity|qty }}</td><td class="num">{{ e.fill_price|money2 }}</td><td class="num">{{ e.fees|money2 }}</td><td class="num">{{ e.total_value|money2 }}</td><td class="num {{ e.realized_pnl|pnl_class if e.side == 'SELL' else 'muted' }}">{{ e.realized_pnl|signed_money if e.side == 'SELL' else '-' }}</td><td>{{ e.entered_by }}</td></tr>
+{% else %}<tr><td colspan="9" class="muted">No fills recorded yet.</td></tr>{% endfor %}
+</table></div>
+
+<div class="grid g2">
+<div><h2 id="agents">Agent activity</h2>
+<div class="card"><table>
+<tr><th>When</th><th>Agent</th><th>Model</th><th>Status</th><th class="num">Tokens in/out</th><th class="num">Cost</th></tr>
+{% for r in runs %}<tr><td>{{ r.created_at|dt }}</td><td><a href="/agent-runs/{{ r.id }}">{{ r.agent }}</a></td><td>{{ r.model }}</td><td class="{{ 'good' if r.status == 'ok' else 'bad' }}">{{ r.status }}</td><td class="num">{{ r.input_tokens }}/{{ r.output_tokens }}</td><td class="num">${{ '%.4f'|format(r.cost_usd) }}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">No market agent runs yet.</td></tr>{% endfor %}
+</table></div></div>
+<div><h2>Recent decisions &amp; snapshots</h2>
+<div class="card"><table>
+<tr><th>Proposal</th><th>Status</th><th>Updated</th></tr>
+{% for p in recent %}<tr><td><a href="/market/proposals/{{ p.id }}">{{ p.side }} {{ p.quantity|qty }} {{ p.ticker }}</a></td><td><span class="pill {{ p.status|status_class }}">{{ p.status }}</span></td><td>{{ p.updated_at|dt }}</td></tr>{% else %}<tr><td colspan="3" class="muted">No decided proposals yet.</td></tr>{% endfor %}
+</table>
+<table style="margin-top:10px"><tr><th>Snapshot</th><th class="num">Cash</th><th class="num">Positions</th><th class="num">Value</th><th class="num">Progress</th><th>Reason</th></tr>
+{% for h in history[:8] %}<tr><td>{{ h.captured_at|dt }}</td><td class="num">{{ h.cash|money2 }}</td><td class="num">{{ h.positions_value|money2 }}</td><td class="num">{{ h.portfolio_value|money2 }}</td><td class="num">{{ '%.1f'|format(h.goal_progress_pct) }}%</td><td>{{ h.reason }}</td></tr>{% endfor %}
+</table></div>
+<div class="card" style="margin-top:12px"><strong>Account rules (V1)</strong><div>{% for r in rules %}<span class="chip">{{ r }}</span>{% endfor %}</div></div>
+</div>
+</div>
+{% endblock %}

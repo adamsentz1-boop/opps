@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.models import Setting
 
 
@@ -60,6 +61,29 @@ SETTING_SPECS: list[SettingSpec] = [
                 "Comma-separated work types to avoid.", "owner"),
 ]
 
+
+
+def _market_specs() -> list[SettingSpec]:
+    """Market Challenge settings; defaults come from .env (MARKET_*) so nothing is hard-coded twice."""
+    env = get_settings()
+    return [
+        SettingSpec("market_scan_interval_minutes", env.market_scan_interval_minutes, "int",
+                    "Minutes between scheduled market scans (research + proposals only; never trades).", "market"),
+        SettingSpec("market_max_position_pct", env.market_max_position_pct, "float",
+                    "Max % of portfolio value in a single ticker after a proposed BUY.", "market"),
+        SettingSpec("market_max_single_trade_pct", env.market_max_single_trade_pct, "float",
+                    "Max % of portfolio value a single proposed BUY may deploy.", "market"),
+        SettingSpec("market_min_cash_reserve_pct", env.market_min_cash_reserve_pct, "float",
+                    "Minimum % of portfolio value kept as cash after a proposed BUY.", "market"),
+        SettingSpec("market_model", env.market_model or env.claude_model, "str",
+                    "Claude model for MarketResearchAgent / PortfolioAgent.", "market"),
+        SettingSpec("market_effort", env.market_effort or env.claude_effort, "str",
+                    "Effort level for market agents: low | medium | high | xhigh | max.", "market"),
+    ]
+
+
+SETTING_SPECS.extend(_market_specs())
+MARKET_SETTING_KEYS = [s.key for s in SETTING_SPECS if s.group == "market"]
 SPEC_BY_KEY = {s.key: s for s in SETTING_SPECS}
 
 

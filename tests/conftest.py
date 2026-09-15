@@ -7,14 +7,18 @@ import pytest
 os.environ["LLM_MOCK"] = "true"
 os.environ["SCHEDULER_ENABLED"] = "false"
 os.environ["ANTHROPIC_API_KEY"] = ""
+os.environ["MARKET_MOCK"] = "true"            # deterministic fake prices; no network
+os.environ["MARKET_SCAN_ENABLED"] = "false"
 
 
 @pytest.fixture()
 def db(tmp_path):
     from app import db as dbmod
     from app.llm.client import reset_llm_client
+    from app.market.data import reset_provider
     dbmod.reset_engine_for_tests(f"sqlite:///{tmp_path / 'test.db'}")
     reset_llm_client()
+    reset_provider()
     dbmod.init_db()
     session = dbmod.get_sessionmaker()()
     try:

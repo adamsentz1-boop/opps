@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Record fill · {{ p.side }} {{ p.ticker }}{% endblock %}
+{% block content %}
+<h1>Record fill: <span class="side {{ p.side|lower }}">{{ p.side }} {{ p.ticker }}</span> <span class="pill {{ p.status|status_class }}">{{ p.status }}</span></h1>
+<p class="muted">Enter what actually happened at your broker. This is the <strong>only</strong> action that changes cash and positions. <a href="/market/proposals/{{ p.id }}">Proposal details</a> · <a href="/market">back</a></p>
+{% if p.status != 'APPROVED' %}
+<div class="flash err">This proposal is {{ p.status }}. Only APPROVED proposals can have a fill recorded.</div>
+{% else %}
+<div class="grid g2">
+<div class="card"><form method="post" action="/market/proposals/{{ p.id }}/fill">
+<label>Quantity filled (proposed {{ p.quantity|qty }}; fractional allowed)</label><input type="number" step="any" min="0" name="quantity" value="{{ p.quantity }}" required>
+<label>Fill price per share (estimated {{ p.estimated_price|money2 }})</label><input type="number" step="any" min="0" name="fill_price" value="{{ p.estimated_price }}" required>
+<label>Fees / commission (USD)</label><input type="number" step="any" min="0" name="fees" value="0">
+<label>Execution timestamp (UTC)</label><input type="datetime-local" name="executed_at" value="{{ now }}">
+<label>Notes</label><input type="text" name="notes" placeholder="order id, broker, partial fill…">
+<div style="margin-top:10px"><button class="btn approve">RECORD FILL</button></div>
+</form></div>
+<div class="card"><strong>Checks applied when you save</strong>
+<ul class="tight">
+<li>BUY: quantity × price + fees must not exceed cash {{ challenge.cash_balance|money2 }} (no negative cash).</li>
+<li>SELL: quantity must not exceed the shares you own (no short selling).</li>
+<li>Creates an immutable TradeExecution and approval record, updates cash and the {{ p.ticker }} position (weighted average cost on buys, realised P&amp;L on sells), recalculates the portfolio, stores a snapshot and writes audit entries.</li>
+</ul></div>
+</div>
+{% endif %}
+{% endblock %}

@@ -43,6 +43,23 @@ class Settings(BaseSettings):
     owner_title: str = "Independent automation & integration consultant"
     owner_timezone: str = "America/New_York"
 
+    # --- Market Challenge module (research + proposals only; never connects to a brokerage) ---
+    market_challenge_enabled: bool = True
+    market_data_provider: str = "yfinance"      # yfinance | mock
+    market_mock: bool = False                   # force deterministic fake prices (tests / offline)
+    market_allowed_asset_types: str = "stocks,etfs"
+    market_starting_capital: float = 200.0
+    market_target_value: float = 1000.0
+    market_target_date: str = "2027-01-01"
+    market_max_position_pct: float = 60.0
+    market_max_single_trade_pct: float = 60.0
+    market_min_cash_reserve_pct: float = 0.0
+    market_scan_enabled: bool = True
+    market_scan_interval_minutes: int = 60
+    market_proposal_ttl_hours: int = 72
+    market_model: str = ""                      # blank = CLAUDE_MODEL
+    market_effort: str = ""                     # blank = CLAUDE_EFFORT
+
     @property
     def llm_enabled(self) -> bool:
         """True when a real Claude API key is configured and mock mode is off."""
@@ -59,6 +76,15 @@ class Settings(BaseSettings):
     @property
     def notification_adapters(self) -> list[str]:
         return [a.strip().lower() for a in self.notify_adapters.split(",") if a.strip()]
+
+    @property
+    def market_asset_types(self) -> list[str]:
+        return [a.strip().lower() for a in self.market_allowed_asset_types.split(",") if a.strip()]
+
+    @property
+    def market_mock_enabled(self) -> bool:
+        """Deterministic fake market data: explicit MARKET_MOCK or MARKET_DATA_PROVIDER=mock."""
+        return self.market_mock or self.market_data_provider.strip().lower() == "mock"
 
 
 @lru_cache

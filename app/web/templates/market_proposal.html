@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ p.side }} {{ p.ticker }} · Market Challenge{% endblock %}
+{% block content %}
+<h1><span class="side {{ p.side|lower }}">{{ p.side }} {{ p.quantity|qty }} {{ p.ticker }}</span> <span class="pill {{ p.status|status_class }}">{{ p.status }}</span></h1>
+<div class="muted">proposed {{ p.created_at|dt }} by {{ p.created_by }} · est. {{ p.estimated_total|money2 }} @ {{ p.estimated_price|money2 }}{% if p.expires_at %} · expires {{ p.expires_at|dt }}{% endif %}{% if p.approval_id %} · approval {{ p.approval_id[:8] }}{% endif %} · <a href="/market">← back to the command center</a></div>
+
+{% if p.status == 'AWAITING_APPROVAL' %}
+<div class="actions" style="margin-top:14px">
+  <form method="post" action="/market/proposals/{{ p.id }}/approve"><input type="text" name="notes" placeholder="notes (optional)"><button class="btn approve">APPROVE</button></form>
+  <form method="post" action="/market/proposals/{{ p.id }}/reject"><input type="text" name="notes" placeholder="why?"><button class="btn reject">REJECT</button></form>
+  <a class="btn edit" href="#edit">EDIT</a>
+  <form method="post" action="/market/proposals/{{ p.id }}/reanalyze"><button class="btn">REANALYZE</button></form>
+</div>
+{% elif p.status == 'APPROVED' %}
+<div class="notice good" style="margin-top:14px"><strong>Approved — execute this trade manually with your broker, then record the fill.</strong>
+<div class="actions" style="margin-bottom:0"><a class="btn approve" href="/market/proposals/{{ p.id }}/fill">RECORD FILL</a><a class="btn edit" href="#edit">EDIT (re-approval needed)</a>
+<form method="post" action="/market/proposals/{{ p.id }}/cancel"><input type="text" name="notes" placeholder="why?"><button class="btn">Cancel</button></form></div></div>
+{% endif %}
+
+<div class="grid g2" style="margin-top:12px">
+<div>
+<h2>15-second read</h2>
+<div class="card trade-card {{ p.side|lower }}">
+  <div class="kv">
+    <div><div class="k">Investment</div><div class="v">{{ p.estimated_total|money2 }}</div></div>
+    <div><div class="k">Price</div><div class="v">{{ p.estimated_price|money2 }}</div></div>
+    <div><div class="k">Quantity</div><div class="v">{{ p.quantity|qty }}</div></div>
+    <div><div class="k">Confidence</div><div class="v {{ p.confidence|score_class }}">{{ p.confidence }}%</div></div>
+    <div><div class="k">Risk / reward</div><div class="v">{{ '%.1f'|format(p.risk_reward_ratio) }}x</div></div>
+    <div><div class="k">Upside / downside</div><div class="v"><span class="good">+{{ '%.0f'|format(p.expected_upside_pct) }}%</span> / <span class="bad">-{{ '%.0f'|format(p.expected_downside_pct) }}%</span></div></div>
+    <div><div class="k">Horizon</div><div class="v">{{ p.time_horizon or '-' }}</div></div>
+  </div>
+  <div class="why">
+    <div><div class="k">Why now</div><div class="v">{{ p.reason_for_trade or '-' }}</div></div>
+    <div><div class="k">Thesis</div><div class="v">{{ p.thesis or '-' }}</div></div>
+    <div><div class="k">Upside case</div><div class="v">{{ p.bull_case or '-' }}</div></div>
+    <div><div class="k">Downside case</div><div class="v">{{ p.bear_case or '-' }}</div></div>
+    <div><div class="k">Catalysts</div><div class="v">{% if p.catalysts %}<ul class="tight">{% for c in p.catalysts %}<li>{{ c }}</li>{% endfor %}</ul>{% else %}-{% endif %}</div></div>
+    <div><div class="k">Risks</div><div class="v">{% if p.risks %}<ul class="tight">{% for r in p.risks %}<li>{{ r }}</li>{% endfor %}</ul>{% else %}-{% endif %}</div></div>
+  </div>
+</div>
+
+{% if p.status in ['AWAITING_APPROVAL', 'APPROVED'] %}
+<h2 id="edit">Edit proposal</h2>
+<div class="card"><form method="post" action="/market/proposals/{{ p.id }}/edit">
+<label>Quantity (fractional allowed)</label><input type="number" step="any" min="0" name="quantity" value="{{ p.quantity }}">
+<label>Estimated price</label><input type="number" step="any" min="0" name="estimated_price" value="{{ p.estimated_price }}">
+<label>Thesis</label><textarea name="thesis" rows="4">{{ p.thesis }}</textarea>
+<label>Notes</label><input type="text" name="notes" placeholder="why the change?">
+<div style="margin-top:8px"><button class="btn edit">Save edit</button> <small>An edit of an approved proposal sends it back to awaiting approval.</small></div>
+</form></div>
+{% endif %}
+
+{% if p.executions %}
+<h2>Fills recorded</h2>
+<div class="card"><table><tr><th>Executed</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Fees</th><th class="num">Total</th><th class="num">Realised</th><th>By</th></tr>
+{% for e in p.executions %}<tr><td>{{ e.executed_at|dt }}</td><td class="num">{{ e.quantity|qty }}</td><td class="num">{{ e.fill_price|money2 }}</td><td class="num">{{ e.fees|money2 }}</td><td class="num">{{ e.total_value|money2 }}</td><td class="num">{{ e.realized_pnl|signed_money }}</td><td>{{ e.entered_by }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+</div>
+
+<div>
+<h2>Portfolio before / after (at proposal time)</h2>
+<div class="card"><pre>{{ p.portfolio_before|tojson(indent=2) }}</pre><pre style="margin-top:8px">{{ p.portfolio_after|tojson(indent=2) }}</pre></div>
+<h2>Market snapshot used</h2>
+<div class="card"><pre>{{ p.market_snapshot|tojson(indent=2) }}</pre></div>
+<details><summary>Raw research output</summary><pre>{{ p.research|tojson(indent=2) }}</pre></details>
+<h2>Audit trail</h2>
+<div class="card"><table><tr><th>When</th><th>Agent</th><th>Action</th><th>From → to</th></tr>
+{% for a in audit %}<tr><td>{{ a.timestamp|dt }}</td><td>{{ a.agent }}</td><td>{{ a.action }}</td><td>{{ a.previous_state or '' }} → {{ a.new_state or '' }}</td></tr>{% endfor %}
+</table></div>
+</div>
+</div>
+{% endblock %}

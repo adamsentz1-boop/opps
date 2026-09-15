@@ -34,9 +34,16 @@ def _ctx(request: Request, db: Session, **extra) -> dict:
     unread = db.query(func.count(Notification.id)).filter(Notification.read.is_(False)).scalar() or 0
     awaiting = db.query(func.count(Opportunity.id)).filter(Opportunity.status == S.AWAITING_APPROVAL.value).scalar() or 0
     settings = get_settings()
+    market_awaiting = 0
+    if settings.market_challenge_enabled:
+        from app.enums import TradeProposalStatus
+        from app.models import TradeProposal
+        market_awaiting = db.query(func.count(TradeProposal.id)) \
+            .filter(TradeProposal.status == TradeProposalStatus.AWAITING_APPROVAL.value).scalar() or 0
     base = {"request": request, "unread": unread, "awaiting_count": awaiting,
             "llm_mode": settings.claude_model if settings.llm_enabled else "MOCK",
-            "flash": request.query_params.get("msg"), "error": request.query_params.get("err")}
+            "market_enabled": settings.market_challenge_enabled, "market_awaiting": market_awaiting,
+            "market_provider": "", "flash": request.query_params.get("msg"), "error": request.query_params.get("err")}
     base.update(extra)
     return base
 

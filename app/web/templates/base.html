@@ -7,8 +7,26 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<nav>
+{% set in_market = request.url.path.startswith('/market') %}
+<nav class="modules">
   <a class="brand" href="/">⚡ Opportunity Engine</a>
+  <a class="module {{ 'active' if not in_market }}" href="/">Opportunity Engine</a>
+  {% if market_enabled %}<a class="module {{ 'active' if in_market }}" href="/market">Market Challenge{% if market_awaiting %}<span class="badge">{{ market_awaiting }}</span>{% endif %}</a>{% endif %}
+  <span class="right">LLM: <strong>{{ llm_mode }}</strong>{% if in_market %} · data: <strong>{{ market_provider }}</strong>{% endif %}</span>
+</nav>
+{% if in_market %}
+<nav class="sub">
+  <a href="/market" class="{{ 'active' if request.url.path in ['/market', '/market/'] }}">Command center</a>
+  <a href="/market#awaiting" class="">Awaiting approval{% if market_awaiting %}<span class="badge">{{ market_awaiting }}</span>{% endif %}</a>
+  <a href="/market#positions">Positions</a>
+  <a href="/market#history">Trade history</a>
+  <a href="/market#agents">Agent activity</a>
+  <a href="/audit?action=market" class="{{ 'active' if request.url.path.startswith('/audit') }}">Audit log</a>
+  <a href="/market/settings" class="{{ 'active' if request.url.path.startswith('/market/settings') }}">Settings & watchlist</a>
+  <span class="right muted">No brokerage connection · every trade is a manual owner action</span>
+</nav>
+{% else %}
+<nav class="sub">
   <a href="/" class="{{ 'active' if request.url.path == '/' }}">Command center</a>
   <a href="/approvals" class="{{ 'active' if request.url.path.startswith('/approvals') }}">Awaiting approval{% if awaiting_count %}<span class="badge">{{ awaiting_count }}</span>{% endif %}</a>
   <a href="/opportunities" class="{{ 'active' if request.url.path.startswith('/opportunities') }}">Opportunities</a>
@@ -18,8 +36,8 @@
   <a href="/audit" class="{{ 'active' if request.url.path.startswith('/audit') }}">Audit log</a>
   <a href="/notifications" class="{{ 'active' if request.url.path.startswith('/notifications') }}">Notifications{% if unread %}<span class="badge">{{ unread }}</span>{% endif %}</a>
   <a href="/settings" class="{{ 'active' if request.url.path.startswith('/settings') }}">Settings</a>
-  <span class="right">LLM: <strong>{{ llm_mode }}</strong></span>
 </nav>
+{% endif %}
 <main>
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 {% if error %}<div class="flash err">{{ error }}</div>{% endif %}

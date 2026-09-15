@@ -1,6 +1,12 @@
 """Seed realistic fake opportunities and run them through the pipeline.
 
-Usage:  python -m scripts.seed [--no-process] [--reset]
+Usage:  python -m scripts.seed [--no-process] [--reset] [--purge]
+
+  --no-process  insert the seeds but do not run the pipeline (no API calls)
+  --reset       delete existing seed rows, then re-insert them
+  --purge       delete existing seed rows and STOP (nothing re-inserted, no API calls)
+
+Seeding with a real ANTHROPIC_API_KEY spends tokens on 15 fake listings. Use LLM_MOCK=true for a free demo.
 """
 from __future__ import annotations
 
@@ -174,14 +180,24 @@ and a restore runbook. SSH access provided. Budget $700-1,000.""",
 ]
 
 
-def seed(process: bool = True, reset: bool = False) -> None:
+def purge_seeds(db) -> int:
+    removed = 0
+    for opp in db.query(Opportunity).filter(Opportunity.source == "manual").all():
+        if opp.external_id.startswith("seed-"):
+            db.delete(opp)
+            removed += 1
+    db.flush()
+    return removed
+
+
+def seed(process: bool = True, reset: bool = False, purge: bool = False) -> None:
     init_db()
     with session_scope() as db:
+        if purge:
+            print(f"purged {purge_seeds(db)} seed opportunities (approvals/audit history retained)")
+            return
         if reset:
-            for opp in db.query(Opportunity).filter(Opportunity.source == "manual").all():
-                if opp.external_id.startswith("seed-"):
-                    db.delete(opp)
-            db.flush()
+            purge_seeds(db)
         created_ids = []
         for payload in SEED_OPPORTUNITIES:
             opp, created = upsert_opportunity(db, normalize_manual(payload))
@@ -202,6 +218,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-process", action="store_true")
     parser.add_argument("--reset", action="store_true")
+    parser.add_argument("--purge", action="store_true", help="remove seed rows without re-inserting")
     args = parser.parse_args()
-    seed(process=not args.no_process, reset=args.reset)
+    seed(process=not args.no_process, reset=args.reset, purge=args.purge)
     sys.exit(0)

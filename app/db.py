@@ -54,6 +54,9 @@ def init_db() -> None:
     Base.metadata.create_all(bind=get_engine())
     with session_scope() as db:
         seed_default_settings(db)
+        if get_settings().market_challenge_enabled:
+            from app.market.portfolio import get_or_create_challenge
+            get_or_create_challenge(db)   # the watchlist is deliberately seeded EMPTY
 
 
 def reset_engine_for_tests(url: str) -> None:

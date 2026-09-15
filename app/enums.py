@@ -35,6 +35,8 @@ class ApprovalAction(str, enum.Enum):
     MARK_WON = "MARK_WON"
     MARK_LOST = "MARK_LOST"
     MARK_INTERVIEWING = "MARK_INTERVIEWING"
+    RECORD_FILL = "RECORD_FILL"          # market challenge: owner records a fill they executed themselves
+    CANCEL = "CANCEL"
 
 
 class ApprovalDecision(str, enum.Enum):
@@ -53,6 +55,8 @@ class AgentRole(str, enum.Enum):
     PROPOSAL = "ProposalAgent"
     WORK = "WorkAgent"
     QA = "QAAgent"
+    MARKET_RESEARCH = "MarketResearchAgent"
+    PORTFOLIO = "PortfolioAgent"
     SYSTEM = "System"
     OWNER = "Owner"
 
@@ -113,3 +117,30 @@ class NotificationLevel(str, enum.Enum):
     OPPORTUNITY = "opportunity"
     WARNING = "warning"
     ERROR = "error"
+
+
+# --------------------------------------------------------------------------- market challenge
+class ChallengeStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    PAUSED = "PAUSED"
+    COMPLETED = "COMPLETED"
+
+
+class TradeSide(str, enum.Enum):
+    BUY = "BUY"
+    SELL = "SELL"
+
+
+class TradeProposalStatus(str, enum.Enum):
+    PROPOSED = "PROPOSED"                    # created by PortfolioAgent, not yet queued
+    AWAITING_APPROVAL = "AWAITING_APPROVAL"  # visible in the owner's queue
+    APPROVED = "APPROVED"                    # owner approved; owner must execute with their broker manually
+    REJECTED = "REJECTED"
+    EXECUTED = "EXECUTED"                    # owner recorded the actual fill
+    EXPIRED = "EXPIRED"
+    CANCELLED = "CANCELLED"
+
+    @classmethod
+    def active(cls) -> set[str]:
+        """Statuses that count as "live" for duplicate detection."""
+        return {cls.PROPOSED.value, cls.AWAITING_APPROVAL.value, cls.APPROVED.value}
