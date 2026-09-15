@@ -87,11 +87,17 @@ def run_scan(db: Session, process: bool = True, sources: list[OpportunitySource]
 
 
 def process_pending(db: Session, limit: int | None = None) -> dict:
+    from app.documents import ingest_pending
+    try:
+        attachments = ingest_pending(db)
+    except Exception as exc:  # noqa: BLE001 - ingestion must never stop the pipeline
+        log.exception("attachment ingestion failed")
+        attachments = {"error": str(exc)[:300]}
     query = db.query(Opportunity).filter(Opportunity.status == OpportunityStatus.NEW.value) \
         .order_by(Opportunity.created_at)
     if limit:
         query = query.limit(limit)
-    counts = {"processed": 0, "recommended": 0, "rejected": 0, "errors": 0}
+    counts = {"processed": 0, "recommended": 0, "rejected": 0, "errors": 0, "attachments": attachments}
     for opp in query.all():
         result = process_opportunity(db, opp.id)
         counts["processed"] += 1
@@ -109,6 +115,10 @@ def process_opportunity(db: Session, opportunity_id: str) -> str:
     thresholds = Thresholds(db)
     llm = get_llm_client()
     _set_status(db, opp, OpportunityStatus.QUALIFYING, "System", "pipeline.start")
+    # Injection patterns found inside attachments count against the opportunity as a whole.
+    att_flags = sorted({f for a in opp.attachments for f in (a.injection_flags or [])})
+    if att_flags:
+        opp.injection_flags = sorted(set(opp.injection_flags or []) | {f"attachment:{f}" for f in att_flags})
     try:
         # 1. Rule-based rejection before spending tokens
         pre = pre_rules(opp, thresholds)

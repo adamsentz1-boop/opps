@@ -134,4 +134,9 @@ def upsert_opportunity(db: Session, item: NormalizedOpportunity) -> tuple[Opport
     db.flush()
     log_event(db, agent="ScoutAgent", action="opportunity.discovered", object_type="opportunity", object_id=opp.id,
               new_state=opp.status, details={"source": opp.source, "title": opp.title, "injection_flags": flags})
+    urls = item.raw_payload.get("attachment_urls") or []
+    if urls:
+        from app.documents import add_attachment
+        for url in urls[:10]:
+            add_attachment(db, opp, filename="", source_url=url)
     return opp, True

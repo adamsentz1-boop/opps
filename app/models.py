@@ -87,6 +87,8 @@ class Opportunity(TimestampMixin, Base):
                                                                        cascade="all, delete-orphan")
     bid_documents: Mapped[list["BidDocument"]] = relationship(back_populates="opportunity",
                                                               cascade="all, delete-orphan", order_by="BidDocument.order")
+    attachments: Mapped[list["Attachment"]] = relationship(back_populates="opportunity",
+                                                           cascade="all, delete-orphan", order_by="Attachment.created_at")
 
     @property
     def is_bid(self) -> bool:
@@ -214,6 +216,34 @@ class Proposal(TimestampMixin, Base):
     raw_response: Mapped[dict] = mapped_column(JSON, default=dict)
 
     opportunity: Mapped[Opportunity] = relationship(back_populates="proposals")
+
+
+class Attachment(TimestampMixin, Base):
+    """A document attached to an opportunity (RFP PDF, statement of work, amendment).
+
+    Files live under data/attachments/<opportunity_id>/. Text is extracted locally through the Stirling PDF
+    service and is UNTRUSTED external content: sanitised and injection-scanned before any agent sees it.
+    """
+    __tablename__ = "attachments"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    opportunity_id: Mapped[str] = mapped_column(ForeignKey("opportunities.id", ondelete="CASCADE"), index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    source_url: Mapped[str | None] = mapped_column(String(1000))
+    file_path: Mapped[str | None] = mapped_column(String(1000))
+    content_type: Mapped[str | None] = mapped_column(String(128))
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", index=True)  # PENDING|PROCESSING|EXTRACTED|FAILED|SKIPPED
+    method: Mapped[str | None] = mapped_column(String(16))   # text | ocr | none
+    pages: Mapped[int | None] = mapped_column(Integer)
+    extracted_text: Mapped[str] = mapped_column(Text, default="")
+    text_chars: Mapped[int] = mapped_column(Integer, default=0)
+    injection_flags: Mapped[list] = mapped_column(JSON, default=list)
+    error: Mapped[str | None] = mapped_column(Text)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    opportunity: Mapped[Opportunity] = relationship(back_populates="attachments")
 
 
 class BidDocument(TimestampMixin, Base):

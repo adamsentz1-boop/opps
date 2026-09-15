@@ -47,7 +47,10 @@
 - [x] Deadlines widget, bid filter, bid fields on the manual intake form
 
 ## Phase 2 - next
-- [ ] Attachment ingestion for solicitations (PDF/DOCX statement of work → text for the agents)
+- [x] Attachment ingestion for solicitations through the existing local Stirling PDF service (text layer first,
+      OCR only for scanned PDFs, sequential, graceful when the container is stopped, SAM.gov resource links queued)
+- [ ] DOCX/XLSX attachments via Stirling's convert endpoints (verify `/api/v1/convert/file/pdf` first)
+- [ ] Auto-reanalyze an opportunity once all its pending attachments finish extracting
 - [ ] State/municipal/university/school district procurement adapters where official feeds exist (PA eMarketplace
       has none; keep manual/JSON inbox)
 - [ ] Tune BidAgent / RequirementsAgent prompts on real solicitations; page-limit and format constraints

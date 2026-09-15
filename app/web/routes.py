@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -13,11 +13,12 @@ from app import work_orders as wo_service
 from app.audit import log_event
 from app.config import get_settings
 from app.costs import cost_for_opportunity, cost_summary
+from app.documents import add_attachment, ingest_attachment, ingest_pending, pdf_service_status
 from app.db import get_db
 from app.enums import OpportunityStatus as S
 from app.enums import WorkOrderStatus, WorkTaskStatus
 from app.metrics import dashboard_metrics
-from app.models import (AgentRun, AuditLog, BidDocument, ComplianceRequirement, Deliverable, Notification, Opportunity,
+from app.models import (AgentRun, Attachment, AuditLog, BidDocument, ComplianceRequirement, Deliverable, Notification, Opportunity,
                         OpportunityAnalysis, SourceRun, WorkOrder, WorkTask)
 from app.normalizer import upsert_opportunity
 from app.pipeline import process_opportunity, reanalyze_opportunity
@@ -213,6 +214,76 @@ def opportunity_detail(request: Request, opportunity_id: str, db: Session = Depe
                                            ai_cost=cost_for_opportunity(db, opportunity_id)))
 
 
+# --------------------------------------------------------------------------- attachments (PDF ingestion via Stirling)
+@router.post("/opportunities/{opportunity_id}/attachments")
+async def attachment_upload(opportunity_id: str, file: UploadFile = File(None), source_url: str = Form(""),
+                            ingest_now: bool = Form(True), db: Session = Depends(get_db)):
+    opp = _get_opp(db, opportunity_id)
+    data = await file.read() if file and file.filename else None
+    if data is None and not source_url.strip():
+        return _redirect(f"/opportunities/{opportunity_id}#attachments", err="Upload a file or give a URL.")
+    limit = get_settings().pdf_max_file_mb * 1024 * 1024
+    if data is not None and len(data) > limit:
+        return _redirect(f"/opportunities/{opportunity_id}#attachments", err=f"File exceeds PDF_MAX_FILE_MB.")
+    att = add_attachment(db, opp, filename=(file.filename if data is not None else ""), data=data,
+                         source_url=source_url.strip() or None, content_type=(file.content_type if data is not None else None))
+    db.commit()
+    if ingest_now:
+        ingest_attachment(db, att)
+        db.commit()
+        if att.status == "EXTRACTED":
+            return _redirect(f"/opportunities/{opportunity_id}#attachments",
+                             msg=f"Extracted {att.text_chars} chars via {att.method}. Reanalyze to use it.")
+        return _redirect(f"/opportunities/{opportunity_id}#attachments", err=f"{att.status}: {att.error}")
+    return _redirect(f"/opportunities/{opportunity_id}#attachments", msg="Attachment queued for the next scan.")
+
+
+@router.post("/attachments/{attachment_id}/retry")
+def attachment_retry(attachment_id: str, db: Session = Depends(get_db)):
+    att = db.get(Attachment, attachment_id)
+    if att is None:
+        raise HTTPException(404)
+    ingest_attachment(db, att)
+    db.commit()
+    if att.status == "EXTRACTED":
+        return _redirect(f"/opportunities/{att.opportunity_id}#attachments", msg=f"Extracted via {att.method}.")
+    return _redirect(f"/opportunities/{att.opportunity_id}#attachments", err=f"{att.status}: {att.error}")
+
+
+@router.post("/attachments/{attachment_id}/delete")
+def attachment_delete(attachment_id: str, db: Session = Depends(get_db)):
+    att = db.get(Attachment, attachment_id)
+    if att is None:
+        raise HTTPException(404)
+    opp_id = att.opportunity_id
+    log_event(db, agent="Owner", action="attachment.deleted", object_type="attachment", object_id=att.id,
+              previous_state=att.status, human_approval_required=True, details={"filename": att.filename})
+    db.delete(att)
+    db.commit()
+    return _redirect(f"/opportunities/{opp_id}#attachments", msg="Attachment removed (file kept on disk).")
+
+
+@router.get("/attachments/{attachment_id}/text", response_class=PlainTextResponse)
+def attachment_text(attachment_id: str, db: Session = Depends(get_db)):
+    att = db.get(Attachment, attachment_id)
+    if att is None:
+        raise HTTPException(404)
+    return att.extracted_text or "(no text extracted yet)"
+
+
+@router.post("/attachments/ingest-pending")
+def attachments_ingest_pending(db: Session = Depends(get_db)):
+    result = ingest_pending(db)
+    db.commit()
+    if result.get("service") == "busy":
+        return _redirect("/sources", err="Ingestion already running.")
+    svc = result.get("service") or {}
+    if isinstance(svc, dict) and svc and not svc.get("reachable"):
+        return _redirect("/sources", err=f"Stirling PDF unreachable: {svc.get('error')}")
+    return _redirect("/sources", msg=f"Attachments: {result['extracted']} extracted, {result['failed']} failed, "
+                                     f"{result['skipped_unavailable']} waiting.")
+
+
 # --------------------------------------------------------------------------- bid documents (Phase 2)
 @router.post("/bid-documents/{doc_id}/approve")
 def bid_document_approve(doc_id: str, notes: str = Form(""), db: Session = Depends(get_db)):
@@ -283,8 +354,12 @@ def proposal_markdown(opportunity_id: str, db: Session = Depends(get_db)):
 @router.get("/sources", response_class=HTMLResponse)
 def sources_page(request: Request, db: Session = Depends(get_db)):
     runs = db.query(SourceRun).order_by(SourceRun.started_at.desc()).limit(30).all()
+    att_counts = dict(db.query(Attachment.status, func.count(Attachment.id)).group_by(Attachment.status).all())
+    problem_atts = db.query(Attachment).filter(Attachment.status.in_(["PENDING", "FAILED"])) \
+        .order_by(Attachment.updated_at.desc()).limit(20).all()
     return templates.TemplateResponse(request, "sources.html", _ctx(request, db, sources=describe_sources(), runs=runs,
-                                                           sched=scheduler_status()))
+                                                           sched=scheduler_status(), pdf=pdf_service_status(),
+                                                           att_counts=att_counts, problem_atts=problem_atts))
 
 
 @router.post("/sources/scan")
@@ -295,12 +370,13 @@ def trigger_scan():
 
 
 @router.post("/sources/manual")
-def add_manual(title: str = Form(...), description: str = Form(""), buyer_name: str = Form(""),
+async def add_manual(title: str = Form(...), description: str = Form(""), buyer_name: str = Form(""),
                budget_min: str = Form(""), budget_max: str = Form(""), budget_type: str = Form("fixed"),
                source_url: str = Form(""), location: str = Form(""), required_skills: str = Form(""),
                deadline: str = Form(""), run_now: bool = Form(True), opportunity_type: str = Form("freelance"),
                agency: str = Form(""), solicitation_number: str = Form(""), set_aside: str = Form(""),
-               naics_code: str = Form(""), estimated_value: str = Form(""), db: Session = Depends(get_db)):
+               naics_code: str = Form(""), estimated_value: str = Form(""), attachment: UploadFile = File(None),
+               db: Session = Depends(get_db)):
     payload = {"title": title, "description": description, "buyer_name": buyer_name or None,
                "budget_min": budget_min or None, "budget_max": budget_max or None, "budget_type": budget_type,
                "source_url": source_url or None, "location": location or None, "required_skills": required_skills,
@@ -313,11 +389,21 @@ def add_manual(title: str = Form(...), description: str = Form(""), buyer_name: 
     db.commit()
     if not created:
         return _redirect(f"/opportunities/{opp.id}", err="Duplicate of an existing opportunity.")
+    att_note = ""
+    if attachment and attachment.filename:
+        data = await attachment.read()
+        if len(data) > get_settings().pdf_max_file_mb * 1024 * 1024:
+            return _redirect(f"/opportunities/{opp.id}", err="Attachment exceeds PDF_MAX_FILE_MB; opportunity saved without it.")
+        att = add_attachment(db, opp, filename=attachment.filename, data=data, content_type=attachment.content_type)
+        db.commit()
+        ingest_attachment(db, att)
+        db.commit()
+        att_note = f" Attachment: {att.status}" + (f" ({att.error})" if att.error else f" via {att.method}") + "."
     if run_now:
         result = process_opportunity(db, opp.id)
         db.commit()
-        return _redirect(f"/opportunities/{opp.id}", msg=f"Added and processed: {result}.")
-    return _redirect(f"/opportunities/{opp.id}", msg="Added. It will be processed on the next scan.")
+        return _redirect(f"/opportunities/{opp.id}", msg=f"Added and processed: {result}.{att_note}")
+    return _redirect(f"/opportunities/{opp.id}", msg=f"Added. It will be processed on the next scan.{att_note}")
 
 
 # --------------------------------------------------------------------------- work orders

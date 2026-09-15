@@ -52,6 +52,44 @@ Approving creates an immutable `approvals` row and moves the opportunity to `REA
 yourself in Phase 1 (copy button / Markdown export on the opportunity page) and then record the outcome (submitted → interviewing → won/lost). Marking an opportunity
 WON creates a `WorkOrder` with an agent-generated plan, task list, QA checklist and approval checkpoints.
 
+## PDF ingestion (RFP attachments) via your existing Stirling PDF
+
+Solicitation PDFs, statements of work and amendments are processed **locally** by the Stirling PDF container
+already running on the host. No second PDF stack is installed and nothing is uploaded to a third-party OCR
+service. Only the extracted text reaches Claude, and only when the workflow makes an agent call.
+
+```
+PDF / RFP attachment ──► Stirling PDF (local) ──► text layer, or OCR only when the PDF is scanned
+        ──► sanitisation + prompt-injection scan ──► untrusted blocks in agent prompts ──► RequirementsAgent …
+```
+
+Configuration (`.env`):
+
+```
+PDF_INGESTION_ENABLED=true
+PDF_SERVICE_URL=http://host.docker.internal:8080   # the host's stirling-pdf; 127.0.0.1 inside the container is NOT the host
+PDF_SERVICE_TYPE=stirling
+PDF_REQUEST_TIMEOUT_SECONDS=120
+PDF_SERVICE_API_KEY=                                # only if Stirling login is enabled (X-API-KEY)
+PDF_OCR_LANGUAGES=eng
+PDF_DOWNLOAD_ALLOWED_HOSTS=sam.gov,api.sam.gov,beta.sam.gov
+```
+
+`docker-compose.yml` maps `host.docker.internal` to the host gateway so the app container can reach the
+Stirling container published on host port 8080. Humans keep using `http://pdf.home.arpa`.
+
+Behaviour:
+- Digital PDFs use the existing text layer (`/api/v1/convert/pdf/text`); OCR (`/api/v1/misc/ocr-pdf`, skip-text,
+  sidecar) runs only when a PDF has fewer than `PDF_MIN_CHARS_PER_PAGE` characters per page.
+- Attachments are processed one at a time, during scans or on demand, so the Lenovo is never saturated.
+- If Stirling is stopped, attachments stay `PENDING` with the error shown on the Sources page and the
+  opportunity page; the scheduler and the rest of the pipeline keep running. Start the container and click
+  "Ingest pending attachments now" or Retry.
+- SAM.gov notice resource links are queued as attachments and downloaded only from allowed hosts; anything
+  else is uploaded manually on the opportunity page or the Sources form.
+- Extracted text is sanitised and injection-scanned; flags are shown per attachment and count against the
+  opportunity. It is never treated as instructions.
+
 ## Phase 2: bids, RFPs and work execution
 
 **Sources.** Set `SAM_GOV_API_KEY` (free at api.data.gov) plus `SAM_GOV_NAICS` and/or `SAM_GOV_KEYWORDS` to pull

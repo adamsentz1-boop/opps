@@ -64,6 +64,8 @@ def _opp_json(opp: Opportunity) -> dict[str, Any]:
         "id": opp.id, "source": opp.source, "external_id": opp.external_id, "title": opp.title,
         "opportunity_type": opp.opportunity_type, "agency": opp.agency, "set_aside": opp.set_aside,
         "deadline": opp.deadline, "bid_documents": [{"id": d.id, "name": d.name, "status": d.status} for d in opp.bid_documents],
+        "attachments": [{"id": a.id, "filename": a.filename, "status": a.status, "method": a.method, "chars": a.text_chars,
+                         "error": a.error} for a in opp.attachments],
         "buyer_name": opp.buyer_name, "status": opp.status, "budget_min": opp.budget_min, "budget_max": opp.budget_max,
         "budget_type": opp.budget_type, "source_url": opp.source_url, "created_at": opp.created_at,
         "rejection_reasons": opp.rejection_reasons, "injection_flags": opp.injection_flags,
@@ -90,8 +92,9 @@ def _opp_json(opp: Opportunity) -> dict[str, Any]:
 @router.get("/health")
 def health():
     s = get_settings()
+    from app.documents import pdf_service_status
     return {"status": "ok", "version": __version__, "llm": s.claude_model if s.llm_enabled else "mock",
-            "scheduler": scheduler_status()}
+            "scheduler": scheduler_status(), "pdf_service": pdf_service_status()}
 
 
 @router.get("/metrics")

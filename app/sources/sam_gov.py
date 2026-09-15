@@ -82,6 +82,7 @@ def notice_to_payload(notice: dict[str, Any], description: str | None = None) ->
         "naics_code": str(notice.get("naicsCode")) if notice.get("naicsCode") else None,
         "place_of_performance": place,
         "raw_notice": {k: v for k, v in notice.items() if k not in ("description",)},
+        "attachment_urls": [u for u in (notice.get("resourceLinks") or []) if isinstance(u, str) and u.startswith("https://")],
     }
 
 

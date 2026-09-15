@@ -8,6 +8,16 @@
 <strong>Scheduler:</strong> {{ 'on' if sched.enabled else 'off' }} · every {{ sched.interval_minutes }} min{% if sched.next_run %} · next {{ sched.next_run|dt }}{% endif %}
 <form method="post" action="/sources/scan" style="margin-top:8px"><button class="btn">Scan all sources now</button></form>
 </div>
+<h2>PDF ingestion · Stirling PDF</h2>
+<div class="card" {% if pdf.enabled and not pdf.reachable %}style="border-color:var(--bad)"{% endif %}>
+{% if not pdf.enabled %}<span class="muted">Disabled (PDF_INGESTION_ENABLED=false).</span>
+{% elif pdf.reachable %}<span class="good">● reachable</span> · {{ pdf.url }} · version {{ pdf.version or '?' }}
+{% else %}<span class="bad">● unreachable</span> · {{ pdf.url }}<br><small>{{ pdf.error }}</small><br><small>Start the stirling-pdf container, then retry. Pending attachments wait; nothing else is affected.</small>{% endif %}
+<div style="margin-top:6px"><small>Attachments: {% for k, v in att_counts.items() %}{{ k }} {{ v }} · {% endfor %}</small></div>
+<form method="post" action="/attachments/ingest-pending" style="margin-top:8px"><button class="btn small">Ingest pending attachments now</button></form>
+{% if problem_atts %}<table style="margin-top:8px"><tr><th>File</th><th>Opportunity</th><th>Status</th><th>Error</th><th></th></tr>
+{% for a in problem_atts %}<tr><td>{{ a.filename }}</td><td><a href="/opportunities/{{ a.opportunity_id }}#attachments">{{ a.opportunity.title[:50] }}</a></td><td><span class="pill {{ 'bad' if a.status == 'FAILED' else 'warn' }}">{{ a.status }}</span></td><td><small>{{ a.error or '' }}</small></td><td><form method="post" action="/attachments/{{ a.id }}/retry" class="inline"><button class="btn small">Retry</button></form></td></tr>{% endfor %}</table>{% endif %}
+</div>
 <h2>Registered adapters</h2>
 <div class="card"><table><tr><th>Source</th><th>Status</th><th>Notes / requirements</th></tr>
 {% for s in sources %}<tr><td><strong>{{ s.display_name }}</strong><br><small>{{ s.name }}</small></td><td>{% if s.enabled %}<span class="pill good">enabled</span>{% else %}<span class="pill muted">stub</span>{% endif %}</td><td><small>{{ s.note or '' }} {{ s.requirements }}</small></td></tr>{% endfor %}
@@ -19,7 +29,7 @@
 </div>
 <div>
 <h2>Add an opportunity manually</h2>
-<form method="post" action="/sources/manual" class="card">
+<form method="post" action="/sources/manual" class="card" enctype="multipart/form-data">
 <label>Title *</label><input type="text" name="title" required>
 <label>Description / listing text (pasted external content is treated as untrusted)</label><textarea name="description" rows="10"></textarea>
 <div class="grid g2">
@@ -41,6 +51,7 @@
 <div><label>Estimated value (USD)</label><input type="text" name="estimated_value"></div>
 </div></details>
 <label>Required skills (comma separated)</label><input type="text" name="required_skills">
+<label>Attachment (RFP / statement of work PDF, processed locally via Stirling PDF)</label><input type="file" name="attachment" accept=".pdf,.txt,application/pdf,text/plain">
 <label><input type="checkbox" name="run_now" value="true" checked style="width:auto"> Run the pipeline immediately</label>
 <div style="margin-top:10px"><button class="btn approve">Add opportunity</button></div>
 </form>

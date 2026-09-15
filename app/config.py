@@ -35,6 +35,18 @@ class Settings(BaseSettings):
     rss_feed_urls: str = ""
     json_feed_urls: str = ""
 
+    # PDF ingestion via the existing local Stirling PDF service (never a third-party OCR service)
+    pdf_ingestion_enabled: bool = True
+    pdf_service_url: str = "http://host.docker.internal:8080"
+    pdf_service_type: str = "stirling"
+    pdf_service_api_key: str = ""          # only if Stirling login/security is enabled (X-API-KEY)
+    pdf_request_timeout_seconds: int = 120
+    pdf_ocr_languages: str = "eng"
+    pdf_max_file_mb: int = 40
+    pdf_min_chars_per_page: int = 40       # below this the PDF is treated as scanned and sent to OCR
+    pdf_max_text_chars: int = 60000        # cap on extracted text passed to agents per attachment
+    pdf_download_allowed_hosts: str = "sam.gov,api.sam.gov,beta.sam.gov"  # auto-download only from these hosts
+
     # SAM.gov (official public API; requires a free api.data.gov key)
     sam_gov_api_key: str = ""
     sam_gov_naics: str = ""            # comma-separated NAICS codes, e.g. 541511,541512,541519,518210
@@ -63,6 +75,14 @@ class Settings(BaseSettings):
     @property
     def json_feeds(self) -> list[str]:
         return [u.strip() for u in self.json_feed_urls.split(",") if u.strip()]
+
+    @property
+    def pdf_allowed_hosts(self) -> list[str]:
+        return [h.strip().lower() for h in self.pdf_download_allowed_hosts.split(",") if h.strip()]
+
+    @property
+    def pdf_languages(self) -> list[str]:
+        return [x.strip() for x in self.pdf_ocr_languages.replace("+", ",").split(",") if x.strip()] or ["eng"]
 
     @property
     def sam_gov_naics_list(self) -> list[str]:

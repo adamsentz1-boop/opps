@@ -138,6 +138,22 @@
 <details><summary>Add requirement</summary><form method="post" action="/opportunities/{{ opp.id }}/requirements"><label>Requirement</label><input type="text" name="requirement" required><label>Type</label><select name="type">{% for t in ['certification','license','insurance','representation','contract_clause','form','deadline','capability','other'] %}<option>{{ t }}</option>{% endfor %}</select><label><input type="checkbox" name="mandatory" value="true" checked style="width:auto"> Mandatory</label><button class="btn small" style="margin-top:6px">Add</button></form></details>
 </div>
 
+<h2 id="attachments">Attachments <small>processed locally by Stirling PDF; extracted text is untrusted data</small></h2>
+<div class="card">
+<table><tr><th>File</th><th>Status</th><th>Method</th><th class="num">Pages</th><th class="num">Chars</th><th>Notes</th><th></th></tr>
+{% for a in opp.attachments %}<tr><td>{{ a.filename }}{% if a.source_url %}<br><small><a href="{{ a.source_url }}" target="_blank" rel="noopener">source</a></small>{% endif %}</td>
+<td><span class="pill {{ 'good' if a.status == 'EXTRACTED' else 'bad' if a.status == 'FAILED' else 'warn' }}">{{ a.status }}</span></td><td>{{ a.method or '-' }}</td><td class="num">{{ a.pages or '-' }}</td><td class="num">{{ a.text_chars }}</td>
+<td><small>{% if a.error %}<span class="bad">{{ a.error }}</span>{% endif %}{% if a.injection_flags %}<span class="warn">⚠ injection patterns: {{ a.injection_flags|join(', ') }}</span>{% endif %}</small></td>
+<td class="actions" style="margin:0">{% if a.status == 'EXTRACTED' %}<a class="btn small" href="/attachments/{{ a.id }}/text" target="_blank">Text</a>{% endif %}{% if a.status != 'PROCESSING' %}<form method="post" action="/attachments/{{ a.id }}/retry"><button class="btn small">{{ 'Re-extract' if a.status == 'EXTRACTED' else 'Retry' }}</button></form>{% endif %}<form method="post" action="/attachments/{{ a.id }}/delete"><button class="btn small">Remove</button></form></td></tr>
+{% else %}<tr><td colspan="7" class="muted">No attachments.</td></tr>{% endfor %}</table>
+<details><summary>Add attachment (PDF or text)</summary><form method="post" action="/opportunities/{{ opp.id }}/attachments" enctype="multipart/form-data">
+<label>Upload file</label><input type="file" name="file" accept=".pdf,.txt,application/pdf,text/plain">
+<label>or URL (auto-download only from allowed hosts)</label><input type="text" name="source_url" placeholder="https://sam.gov/...">
+<label><input type="checkbox" name="ingest_now" value="true" checked style="width:auto"> Extract now</label>
+<button class="btn small" style="margin-top:6px">Add</button></form>
+<small>After extraction, click REANALYZE so the agents read the document.</small></details>
+</div>
+
 <h2>Listing (untrusted external content)</h2>
 <div class="card"><pre>{{ opp.description or opp.raw_text }}</pre>
 {% if opp.required_skills %}<small>Skills: {{ opp.required_skills|join(', ') }}</small>{% endif %}</div>

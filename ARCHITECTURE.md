@@ -36,6 +36,19 @@ Maps any payload to `NormalizedOpportunity` (title, description, buyer, budget m
 skills, deliverables, raw text). Parses budgets from free text (`$1,500-2,000`, `$45/hr`). De-duplicates on
 `(source, external_id)`. Runs injection detection on insert and stores `injection_flags`.
 
+### Document ingestion (`app/documents/`)
+`StirlingClient` talks to the owner's existing Stirling PDF container (`PDF_SERVICE_URL`, default
+`http://host.docker.internal:8080`; `X-API-KEY` only if Stirling security is on). Verified endpoints:
+`GET /api/v1/info/status`, `POST /api/v1/convert/pdf/text` (PDFBox text layer), `POST /api/v1/misc/ocr-pdf`
+(Tesseract, `sidecar=true` returns a zip with the `.txt`), `POST /api/v1/security/get-info-on-pdf`.
+`extract()` takes the text layer first and OCRs only when a document is effectively image-only.
+`service.py` stores `Attachment` rows (files under `data/attachments/<opportunity>/`), downloads URLs only from
+`PDF_DOWNLOAD_ALLOWED_HOSTS`, ingests **sequentially under a lock**, keeps unreachable-service failures as
+`PENDING` (auto-retry), other failures as `FAILED` (manual retry), and exposes `attachment_blocks()` which
+renders extracted text as `<untrusted_opportunity_data>` blocks for `BaseAgent.opportunity_block()`. Injection
+flags found in attachments are merged into the opportunity's flags before scoring. `process_pending()` runs
+`ingest_pending()` first, wrapped so that ingestion can never stop the scheduler.
+
 ### Pipeline (`app/pipeline/runner.py`)
 `process_opportunity(db, id)`:
 1. `pre_rules` (no tokens): physical/onsite, licensed, ToS/deceptive, full-time, low budget, ≥3 injection
@@ -108,7 +121,7 @@ Execution: `execute_task` (owner-triggered, agent-owned tasks only, dependencies
 ### Data model (SQLite)
 `opportunities`, `opportunity_analysis`, `solution_plans`, `buyers`, `proposals`, `bid_documents`, `approvals`,
 `source_runs`, `agent_runs`, `work_orders`, `work_tasks`, `deliverables`, `compliance_requirements`, `audit_log`,
-`settings`, `notifications`. `init_db` adds any columns missing from an existing SQLite file (forward-only
+`settings`, `notifications`, `attachments`. `init_db` adds any columns missing from an existing SQLite file (forward-only
 migration), so upgrading keeps your data.
 
 ### Opportunity status flow
