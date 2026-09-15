@@ -3,6 +3,10 @@
 Tables: opportunities, opportunity_analysis, solution_plans, buyers, proposals,
 approvals, source_runs, agent_runs, work_orders, work_tasks, deliverables,
 compliance_requirements, audit_log, settings, notifications.
+
+Market Challenge tables: trading_challenges, market_positions, trade_proposals, trade_executions,
+market_snapshots, portfolio_snapshots, market_watchlist. The market module never talks to a broker:
+positions and cash only change through the owner's Record Fill action (app/market/portfolio.py).
 """
 from __future__ import annotations
 
@@ -14,7 +18,8 @@ from sqlalchemy import (JSON, Boolean, DateTime, Float, ForeignKey, Integer, Str
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
-from app.enums import (DeliverableStatus, OpportunityStatus, WorkOrderStatus, WorkTaskStatus)
+from app.enums import (ChallengeStatus, DeliverableStatus, OpportunityStatus, TradeProposalStatus,
+                       WorkOrderStatus, WorkTaskStatus)
 
 
 def utcnow() -> datetime:
@@ -400,3 +405,191 @@ class Notification(Base):
     opportunity_id: Mapped[str | None] = mapped_column(String(32), index=True)
     read: Mapped[bool] = mapped_column(Boolean, default=False)
     channel: Mapped[str] = mapped_column(String(32), default="dashboard")
+
+
+# --------------------------------------------------------------------------- market challenge
+class TradingChallenge(Base):
+    """A personal, hypothetical/recorded portfolio challenge. Cash and P&L are a ledger of owner-recorded fills."""
+    __tablename__ = "trading_challenges"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(255), default="$200 to $1,000 Market Challenge")
+    starting_cash: Mapped[float] = mapped_column(Float, default=200.0)
+    target_value: Mapped[float] = mapped_column(Float, default=1000.0)
+    target_date: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime(2027, 1, 1))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    cash_balance: Mapped[float] = mapped_column(Float, default=200.0)
+    current_portfolio_value: Mapped[float] = mapped_column(Float, default=200.0)
+    realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
+    unrealized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
+    status: Mapped[str] = mapped_column(String(32), default=ChallengeStatus.ACTIVE.value, index=True)
+
+    positions: Mapped[list["MarketPosition"]] = relationship(back_populates="challenge",
+                                                             order_by="MarketPosition.ticker")
+    proposals: Mapped[list["TradeProposal"]] = relationship(back_populates="challenge",
+                                                            order_by="TradeProposal.created_at")
+    executions: Mapped[list["TradeExecution"]] = relationship(back_populates="challenge",
+                                                              order_by="TradeExecution.executed_at")
+
+    @property
+    def positions_value(self) -> float:
+        return round(sum(p.market_value or 0.0 for p in self.positions if (p.quantity or 0) > 0), 2)
+
+
+class MarketPosition(Base):
+    """A long-only position. Quantity is a float so fractional shares are supported."""
+    __tablename__ = "market_positions"
+    __table_args__ = (UniqueConstraint("challenge_id", "ticker", name="uq_position_challenge_ticker"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    challenge_id: Mapped[str] = mapped_column(ForeignKey("trading_challenges.id", ondelete="CASCADE"), index=True)
+    ticker: Mapped[str] = mapped_column(String(16), index=True)
+    quantity: Mapped[float] = mapped_column(Float, default=0.0)
+    average_cost: Mapped[float] = mapped_column(Float, default=0.0)
+    current_price: Mapped[float | None] = mapped_column(Float)
+    market_value: Mapped[float] = mapped_column(Float, default=0.0)
+    unrealized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
+    opened_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    challenge: Mapped[TradingChallenge] = relationship(back_populates="positions")
+
+    @property
+    def cost_basis(self) -> float:
+        return round((self.quantity or 0.0) * (self.average_cost or 0.0), 2)
+
+    @property
+    def unrealized_pnl_pct(self) -> float:
+        basis = self.cost_basis
+        return round(self.unrealized_pnl / basis * 100.0, 2) if basis else 0.0
+
+
+class TradeProposal(Base):
+    """A proposed trade for OWNER review. Approval never executes it; the owner trades manually and records the fill."""
+    __tablename__ = "trade_proposals"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    challenge_id: Mapped[str] = mapped_column(ForeignKey("trading_challenges.id", ondelete="CASCADE"), index=True)
+    ticker: Mapped[str] = mapped_column(String(16), index=True)
+    side: Mapped[str] = mapped_column(String(8))                     # BUY | SELL
+    quantity: Mapped[float] = mapped_column(Float, default=0.0)
+    estimated_price: Mapped[float] = mapped_column(Float, default=0.0)
+    estimated_total: Mapped[float] = mapped_column(Float, default=0.0)
+    thesis: Mapped[str] = mapped_column(Text, default="")
+    reason_for_trade: Mapped[str] = mapped_column(Text, default="")
+    bull_case: Mapped[str] = mapped_column(Text, default="")
+    bear_case: Mapped[str] = mapped_column(Text, default="")
+    catalysts: Mapped[list] = mapped_column(JSON, default=list)
+    risks: Mapped[list] = mapped_column(JSON, default=list)
+    time_horizon: Mapped[str] = mapped_column(String(64), default="")
+    confidence: Mapped[int] = mapped_column(Integer, default=0)      # 0-100
+    expected_upside_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    expected_downside_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    risk_reward_ratio: Mapped[float] = mapped_column(Float, default=0.0)
+    portfolio_before: Mapped[dict] = mapped_column(JSON, default=dict)
+    portfolio_after: Mapped[dict] = mapped_column(JSON, default=dict)
+    market_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    research: Mapped[dict] = mapped_column(JSON, default=dict)      # MarketResearchAgent output used
+    status: Mapped[str] = mapped_column(String(32), default=TradeProposalStatus.PROPOSED.value, index=True)
+    created_by: Mapped[str] = mapped_column(String(64), default="PortfolioAgent")
+    edited_by_owner: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime)
+    approval_id: Mapped[str | None] = mapped_column(String(32))     # approval row for APPROVE/REJECT
+
+    challenge: Mapped[TradingChallenge] = relationship(back_populates="proposals")
+    executions: Mapped[list["TradeExecution"]] = relationship(back_populates="proposal",
+                                                              order_by="TradeExecution.executed_at")
+
+    @property
+    def is_active(self) -> bool:
+        return self.status in TradeProposalStatus.active()
+
+
+class TradeExecution(Base):
+    """A fill the OWNER executed outside Opportunity Engine and then recorded here. Immutable."""
+    __tablename__ = "trade_executions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    trade_proposal_id: Mapped[str] = mapped_column(ForeignKey("trade_proposals.id"), index=True)
+    challenge_id: Mapped[str] = mapped_column(ForeignKey("trading_challenges.id", ondelete="CASCADE"), index=True)
+    ticker: Mapped[str] = mapped_column(String(16), index=True)
+    side: Mapped[str] = mapped_column(String(8))
+    quantity: Mapped[float] = mapped_column(Float)
+    fill_price: Mapped[float] = mapped_column(Float)
+    fees: Mapped[float] = mapped_column(Float, default=0.0)
+    total_value: Mapped[float] = mapped_column(Float)               # cash out (BUY, incl. fees) / cash in (SELL, net)
+    realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)  # SELL only
+    executed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    entered_by: Mapped[str] = mapped_column(String(128), default="owner")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    approval_id: Mapped[str | None] = mapped_column(String(32))
+
+    proposal: Mapped[TradeProposal] = relationship(back_populates="executions")
+    challenge: Mapped[TradingChallenge] = relationship(back_populates="executions")
+
+
+@event.listens_for(TradeExecution, "before_update")
+def _execution_immutable(_mapper, _connection, _target):  # pragma: no cover - guard
+    raise RuntimeError("Trade execution records are immutable")
+
+
+@event.listens_for(TradeExecution, "before_delete")
+def _execution_no_delete(_mapper, _connection, _target):  # pragma: no cover - guard
+    raise RuntimeError("Trade execution records cannot be deleted")
+
+
+class MarketSnapshot(Base):
+    """A quote fetched from the market data provider (read-only). Never treated as instructions."""
+    __tablename__ = "market_snapshots"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    ticker: Mapped[str] = mapped_column(String(16), index=True)
+    price: Mapped[float] = mapped_column(Float)
+    open_price: Mapped[float | None] = mapped_column(Float)
+    high: Mapped[float | None] = mapped_column(Float)
+    low: Mapped[float | None] = mapped_column(Float)
+    previous_close: Mapped[float | None] = mapped_column(Float)
+    volume: Mapped[float | None] = mapped_column(Float)
+    market_cap: Mapped[float | None] = mapped_column(Float)
+    asset_type: Mapped[str | None] = mapped_column(String(32))       # stock | etf | unknown | ...
+    name: Mapped[str | None] = mapped_column(String(255))
+    currency: Mapped[str | None] = mapped_column(String(8))
+    provider: Mapped[str] = mapped_column(String(32), default="mock")
+    captured_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    raw_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    @property
+    def change_pct(self) -> float | None:
+        if self.previous_close:
+            return round((self.price - self.previous_close) / self.previous_close * 100.0, 2)
+        return None
+
+
+class PortfolioSnapshot(Base):
+    __tablename__ = "portfolio_snapshots"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    challenge_id: Mapped[str] = mapped_column(ForeignKey("trading_challenges.id", ondelete="CASCADE"), index=True)
+    cash: Mapped[float] = mapped_column(Float)
+    positions_value: Mapped[float] = mapped_column(Float)
+    portfolio_value: Mapped[float] = mapped_column(Float)
+    realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
+    unrealized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
+    goal_progress_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    reason: Mapped[str] = mapped_column(String(64), default="")     # fill | scan | refresh | manual
+    captured_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class MarketWatchlist(Base):
+    """Tickers the owner allows the agents to research. Seeded EMPTY on purpose - the owner populates it."""
+    __tablename__ = "market_watchlist"
+
+    ticker: Mapped[str] = mapped_column(String(16), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

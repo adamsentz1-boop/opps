@@ -86,6 +86,47 @@ Sources ──► Normalizer ──► Rule rejection ──► QualificationAge
 * **Notifications**: dashboard adapter enabled by default. ntfy push works when you opt in
   (`NOTIFY_ADAPTERS=dashboard,ntfy` plus `NTFY_URL`/`NTFY_TOPIC`); email/Slack/SMS are stubs that never send.
 
+## Market Challenge
+
+A second module, **Market Challenge** (`/market`), runs alongside the freelance pipeline with the same
+human-approval philosophy.
+
+* **Starting capital:** $200
+* **Target:** $1,000
+* **Target date:** January 1, 2027
+
+**Opportunity Engine cannot execute stock trades.** It researches the tickers *you* put on the watchlist and
+proposes trades. **Owner approval is required** for every proposal. **The owner executes approved trades
+manually** with their own broker, and **the owner records the actual fills** in the dashboard. There is no
+brokerage API, no order submission, no money movement and no brokerage credentials anywhere in the code.
+
+```
+MARKET DATA (yfinance, read-only) ──► MarketResearchAgent ──► PortfolioAgent ──► TradeProposal
+        AWAITING_APPROVAL ──► YOU: APPROVE / REJECT / EDIT / REANALYZE ──► APPROVED
+        ──► you trade with your broker ──► you RECORD FILL ──► ledger (cash, positions, P&L, snapshot)
+```
+
+* `/market` is a command center: portfolio value, starting capital, target, goal progress, cash, today's move,
+  total return, days remaining, a $200 → $1,000 progress bar, positions, proposals awaiting approval
+  (15-second trade cards with why-now, upside/downside cases, catalysts, risks, confidence, risk/reward),
+  approved trades awaiting a fill, trade history and market agent activity (model, tokens, cost).
+* `/market/settings`: starting capital, target, target date, scan interval, position/trade limits, model, effort,
+  and the **allowed watchlist**. The watchlist ships **empty** - the system never seeds recommendations.
+  Changing the starting capital after trades have been recorded requires an explicit confirmation and is audited.
+* Universe (V1): long-only cash account, ordinary stocks and ETFs, fractional shares; no options, futures, forex,
+  crypto, leveraged/inverse products, short selling, margin, borrowing or negative cash. Every proposal and every
+  fill is re-checked deterministically in Python (`app/market/portfolio.py`); agents never mutate the ledger.
+* Approvals reuse the same immutable `approvals` table (`object_type = "market_trade"`). Approving records the
+  decision and shows *"Approved — execute this trade manually with your broker, then record the fill."*
+* A scheduled scan (`MARKET_SCAN_ENABLED`, `MARKET_SCAN_INTERVAL_MINUTES`) and the **RUN MARKET SCAN** button
+  refresh quotes, run the two agents and create at most one proposal per ticker/side. Market-data failures are
+  logged, never fatal. `MARKET_MOCK=true` uses deterministic fake prices so everything works offline.
+* Prompts: `app/prompts/market_research.md`, `app/prompts/portfolio.md`, `app/prompts/_market_guardrails.md`.
+  The agents are told the target is an optimisation objective, never a guarantee, and to never fabricate prices,
+  news, earnings or ratings. Provider text is wrapped as untrusted data.
+
+This is a personal, experimental portfolio challenge, not investment advice.
+
 ## Security model
 
 * Secrets only in `.env`; the API key is never rendered or logged (`/settings` shows only "configured: true").
@@ -97,6 +138,8 @@ Sources ──► Normalizer ──► Rule rejection ──► QualificationAge
   instructions inside those blocks as red flags.
 * Agents cannot submit, send, sign, spend, self-certify, or delete. Those code paths simply do not exist in the
   agent layer; approval routes are owner-only UI/API actions.
+* The Market Challenge has no brokerage integration at all: the only code that changes cash or positions is the
+  owner's Record Fill action, which requires an APPROVED proposal and refuses negative cash or over-selling.
 * `ComplianceRequirement.verified` defaults to `false` and can only be set through the owner verification route
   with evidence. Unverified mandatory requirements block approval.
 
@@ -104,7 +147,8 @@ Sources ──► Normalizer ──► Rule rejection ──► QualificationAge
 
 Without `ANTHROPIC_API_KEY` (or with `LLM_MOCK=true`) the platform runs a deterministic keyword-based stand-in
 for Claude so the pipeline, dashboard, approvals and tests work offline. Mock outputs are labelled `[MOCK]`.
-Set the key to use `claude-opus-5` (configurable via `CLAUDE_MODEL`, `CLAUDE_EFFORT`).
+Set the key to use `claude-opus-5` (configurable via `CLAUDE_MODEL`, `CLAUDE_EFFORT`). `MARKET_MOCK=true` (or
+`MARKET_DATA_PROVIDER=mock`) does the same for market data: deterministic fake quotes, no network.
 
 ## Layout
 
@@ -117,12 +161,13 @@ app/
   sanitize.py        untrusted-content handling
   normalizer.py      payload -> NormalizedOpportunity -> DB
   sources/           adapters (manual, rss, json, stubs, registry)
-  agents/            agent roles      prompts/  editable system prompts
+  agents/            agent roles (incl. market_research, portfolio)   prompts/  editable system prompts
   llm/               Claude client + mock
   pipeline/          rejection, scoring, runner
+  market/            Market Challenge: data.py (providers), universe.py, portfolio.py (ledger), approvals.py, scan.py
   approvals.py       approval system   work_orders.py  execution lifecycle
   audit.py, costs.py, metrics.py, notifications/, scheduler.py, settings_service.py
-  web/               routes, JSON API, templates, static
+  web/               routes, JSON API, market_routes/market_api, templates, static
 scripts/seed.py      realistic fake opportunities    scripts/run_pipeline.py  one scan cycle
 tests/               pytest suite (mock mode)
 ```

@@ -126,3 +126,26 @@ rows, always `verified=false`) → Profitability analysis → Solution plan → 
   `llm/mock.py`.
 * New threshold: add a `SettingSpec` in `settings_service.py`; it appears on `/settings` automatically.
 * New notification channel: subclass `NotificationAdapter`, register in `notifications/adapters.py`.
+
+
+## Market Challenge module (`app/market/`)
+
+A second, independent module that reuses the platform's plumbing (LLM client, `AgentRun`, `AuditLog`, immutable
+`Approval`, settings, templates) for a personal $200 → $1,000 portfolio challenge.
+
+```
+MarketWatchlist (owner) ─► MarketDataProvider.get_quote (yfinance | mock) ─► MarketSnapshot
+      └─► MarketResearchAgent (per ticker) ─► PortfolioAgent (one decision) ─► propose_from_decision
+                └─ deterministic re-validation (universe, cash, max trade %, max position %, reserve, duplicates)
+                        └─► TradeProposal AWAITING_APPROVAL ─► owner APPROVE/REJECT/EDIT/REANALYZE (Approval rows)
+                                └─► APPROVED ─► owner trades at their broker ─► owner RECORD FILL
+                                        └─► record_fill(): TradeExecution + cash + MarketPosition + PortfolioSnapshot + audit
+```
+
+Invariants:
+* No brokerage client exists. Approval never executes; only `record_fill` mutates cash/positions and it requires
+  an APPROVED proposal, refuses negative cash and refuses selling more than is owned.
+* Agents receive numeric quotes as trusted blocks and provider text as untrusted blocks; the guardrails forbid
+  fabricated data and any "guaranteed" language. All agent numbers are clamped by Python before a proposal exists.
+* Everything is audited: `market.scan.*`, `market.data.*`, `market.research.generated`, `market.trade.*`,
+  `market.position.changed`, `market.portfolio.snapshot`, `market.settings.changed`, `market.watchlist.*`.

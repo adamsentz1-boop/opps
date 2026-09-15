@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Market settings · Opportunity Engine{% endblock %}
+{% block content %}
+<h1>Market Challenge settings</h1>
+<div class="grid g2">
+<div>
+<form method="post" action="/market/settings">
+<h2>Challenge</h2><div class="card">
+<label>Name</label><input type="text" name="name" value="{{ challenge.name }}">
+<label>Starting capital (USD)</label><input type="number" step="0.01" min="0.01" name="starting_capital" value="{{ '%.2f'|format(challenge.starting_cash) }}">
+{% if fills %}<div class="notice" style="border-color:var(--warn)"><strong class="warn">{{ fills }} trade(s) have been recorded.</strong> Changing the starting capital adjusts the cash balance by the difference and requires explicit confirmation; an audit entry is written.
+<label class="check"><input type="checkbox" name="confirm_capital_change" value="yes"> I understand and want to change the starting capital.</label></div>{% endif %}
+<label>Target value (USD)</label><input type="number" step="0.01" min="0.01" name="target_value" value="{{ '%.2f'|format(challenge.target_value) }}">
+<label>Target date</label><input type="date" name="target_date" value="{{ challenge.target_date.date().isoformat() }}">
+</div>
+<h2>Limits, scanning and agents</h2><div class="card">
+{% for s in specs %}
+<label>{{ s.key }} <small>— {{ s.description }}</small></label><input type="text" name="{{ s.key }}" value="{{ values[s.key] }}">
+{% endfor %}
+<small>Scheduler: {{ 'on' if sched.enabled else 'off' }}{% if sched.next_run %} · next scan {{ sched.next_run|dt }}{% endif %}. Interval changes apply immediately.</small>
+</div>
+<div style="margin-top:10px"><button class="btn approve">Save settings</button></div>
+</form>
+</div>
+
+<div>
+<h2>Allowed watchlist</h2>
+<div class="card">
+<p class="muted" style="margin-top:0">Only tickers listed here are researched. The system ships with an empty watchlist and never seeds recommendations - you decide what is in scope.</p>
+<form method="post" action="/market/settings/watchlist" class="actions" style="margin:0 0 10px">
+  <input type="text" name="ticker" placeholder="TICKER" required style="width:120px;text-transform:uppercase">
+  <input type="text" name="notes" placeholder="notes for the research agent (optional)" style="width:320px">
+  <button class="btn edit">Add</button>
+</form>
+<table><tr><th>Ticker</th><th>Enabled</th><th>Notes</th><th>Added</th><th></th></tr>
+{% for w in watch %}<tr><td><strong>{{ w.ticker }}</strong></td><td class="{{ 'good' if w.enabled else 'muted' }}">{{ 'yes' if w.enabled else 'no' }}</td><td>{{ w.notes }}</td><td>{{ w.created_at|dt }}</td>
+<td><div class="actions" style="margin:0"><form method="post" action="/market/settings/watchlist/{{ w.ticker }}/toggle"><button class="btn small">{{ 'Disable' if w.enabled else 'Enable' }}</button></form>
+<form method="post" action="/market/settings/watchlist/{{ w.ticker }}/remove"><button class="btn small reject">Remove</button></form></div></td></tr>
+{% else %}<tr><td colspan="5" class="muted">Empty. Add at least one ticker to enable scanning.</td></tr>{% endfor %}
+</table></div>
+
+<h2>Universe rules (V1)</h2><div class="card">{% for r in rules %}<span class="chip">{{ r }}</span>{% endfor %}</div>
+
+<h2>Environment (read-only)</h2><div class="card"><table>
+{% for k, v in env.items() %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}
+</table><small>Change these in <code>.env</code> and restart. There is no brokerage setting because there is no brokerage integration.</small></div>
+<h2>Prompts</h2><div class="card">Market agent prompts live in <code>app/prompts/market_research.md</code>, <code>app/prompts/portfolio.md</code> and <code>app/prompts/_market_guardrails.md</code>; they are re-read on every call.</div>
+</div>
+</div>
+{% endblock %}

@@ -9,4 +9,5 @@ python-dotenv>=1.0
 apscheduler>=3.10,<4
 python-multipart>=0.0.9
 httpx>=0.27
+yfinance>=0.2.40   # read-only market quotes for the Market Challenge (no brokerage)
 pytest>=8.0

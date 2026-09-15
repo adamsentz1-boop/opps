@@ -24,6 +24,26 @@
 - [x] Proposal copy button + Markdown export for manual submission
 - [x] ntfy push transport (opt-in via NOTIFY_ADAPTERS + NTFY_URL/NTFY_TOPIC); manual scans run in the background
 
+## Done (Market Challenge module)
+- [x] `TradingChallenge`, `MarketPosition`, `TradeProposal`, `TradeExecution`, `MarketSnapshot`, `PortfolioSnapshot`,
+      `MarketWatchlist` tables; default $200 → $1,000 by 2027-01-01 challenge; empty watchlist seed
+- [x] `MarketDataProvider` abstraction with read-only yfinance + deterministic mock (`MARKET_MOCK`); failures audited, never fatal
+- [x] MarketResearchAgent + PortfolioAgent (BaseAgent/run_structured, AgentRun, prompts in `app/prompts/`)
+- [x] Deterministic universe/limit checks (long-only, stocks/ETFs, fractional, no leverage/margin/negative cash)
+- [x] Trade approvals through the existing immutable `approvals` table (`object_type=market_trade`); approval never executes
+- [x] Record Fill (the only ledger mutation): TradeExecution, cash, weighted-average cost, realised/unrealised P&L,
+      PortfolioSnapshot, audit entries
+- [x] `/market` command center, `/market/settings` (+watchlist), `/api/market/*`, scheduled + manual market scans,
+      duplicate-proposal prevention, expiry, edit/reanalyze/cancel
+- [x] Offline test coverage for balances, limits, approvals, fills, P&L, goal progress, HOLD, mock scan
+
+## Next (Market Challenge)
+- [ ] Price history / sparkline on the dashboard from `market_snapshots`
+- [ ] Optional news/fundamentals inputs for MarketResearchAgent (owner-supplied only; still never fetched by agents)
+- [ ] Trailing-stop / take-profit *reminders* (proposals only, still owner-executed)
+- [ ] Per-ticker research cache to avoid re-running research on unchanged prices
+- [ ] Export ledger to CSV for tax records
+
 ## Next
 - [ ] Run the seed set against the real Claude API and tune prompts/thresholds with actual outputs
 - [ ] Prompt-cache the guardrails/system prompt across agents (already marked `cache_control`; verify hit rate)

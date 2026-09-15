@@ -36,3 +36,23 @@ ul.tight{margin:4px 0;padding-left:18px}ul.tight li{margin:2px 0}
 .q{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.5px;margin-top:10px}
 small{color:var(--muted)}
 @media (max-width:700px){main{padding:12px}.hero{gap:14px}}
+
+/* ---- module switcher + market challenge ---- */
+nav.modules{padding:8px 20px;border-bottom:none}nav.modules a.module{font-weight:700;padding:6px 14px;border:1px solid var(--border);margin-right:4px}
+nav.modules a.module.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+nav.sub{top:46px;padding:6px 20px;font-size:13px;z-index:4}
+.progress{position:relative;height:14px;background:var(--border);border-radius:8px;margin:10px 0 6px;overflow:hidden}
+.progress i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--good));border-radius:8px}
+.progress-labels{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.progress-wrap{position:relative;padding:6px 0 18px}.progress-marker{position:absolute;top:34px;transform:translateX(-50%);font-size:12px;font-weight:700;white-space:nowrap}
+.trade-card{border-left:4px solid var(--warn);margin-bottom:12px}.trade-card.buy{border-left-color:var(--good)}.trade-card.sell{border-left-color:var(--bad)}
+.trade-card .head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}.trade-card .side{font-size:20px;font-weight:800;letter-spacing:.5px}
+.side.buy{color:var(--good)}.side.sell{color:var(--bad)}
+.trade-card .why{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin:8px 0}
+.trade-card .why .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px}.trade-card .why .v{font-size:13px}
+.notice{padding:10px 14px;border-radius:8px;border:1px solid var(--info);background:rgba(90,169,255,.08);margin:8px 0}
+.notice.good{border-color:var(--good);background:rgba(62,207,142,.08)}
+.hero.market{gap:22px}.hero.market .item .v{font-size:22px}.hero.market .item.big .v{font-size:30px;color:var(--good)}
+.disclaimer{color:var(--muted);font-size:12px;margin:6px 0 14px}
+.chip{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;border:1px solid var(--border);margin:2px 4px 2px 0;color:var(--muted)}
+.check{display:flex;gap:8px;align-items:center}.check input{width:auto}

@@ -15,8 +15,8 @@ from app.sanitize import UNTRUSTED_PREAMBLE, wrap_untrusted
 T = TypeVar("T", bound=BaseModel)
 
 
-def load_prompt(name: str) -> str:
-    guardrails = (PROMPT_DIR / "_guardrails.md").read_text(encoding="utf-8")
+def load_prompt(name: str, guardrails_name: str = "_guardrails") -> str:
+    guardrails = (PROMPT_DIR / f"{guardrails_name}.md").read_text(encoding="utf-8")
     role = (PROMPT_DIR / f"{name}.md").read_text(encoding="utf-8")
     return f"{guardrails}\n\n---\n\n{role}"
 
@@ -24,13 +24,14 @@ def load_prompt(name: str) -> str:
 class BaseAgent:
     role: str = "BaseAgent"
     prompt_name: str = "qualification"
+    guardrails_name: str = "_guardrails"
 
     def __init__(self, llm: LLMClient | None = None):
         self.llm = llm or get_llm_client()
 
     @property
     def system_prompt(self) -> str:
-        return load_prompt(self.prompt_name)
+        return load_prompt(self.prompt_name, self.guardrails_name)
 
     def run_structured(self, db: Session, *, user_content: str, output_model: type[T],
                        opportunity_id: str | None = None, work_order_id: str | None = None,

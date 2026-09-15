@@ -11,8 +11,9 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from app.schemas import (BuyerResearchOutput, ProposalOutput, QAOutput, QualificationOutput, RequirementItem,
-                         RequirementsOutput, ScoutOutput, SolutionOutput, WorkPlanOutput, WorkTaskOutput)
+from app.schemas import (BuyerResearchOutput, MarketResearchOutput, PortfolioDecisionOutput, ProposalOutput, QAOutput,
+                         QualificationOutput, RequirementItem, RequirementsOutput, ScoutOutput, SolutionOutput,
+                         WorkPlanOutput, WorkTaskOutput)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -251,13 +252,91 @@ def _scout(ctx: dict[str, Any], text: str) -> ScoutOutput:
                        reason="[MOCK] keyword triage", extracted_skills=[w for w in PREFERRED if w in lower][:8])
 
 
+# --------------------------------------------------------------------------- market challenge mocks
+def _market_research(ctx: dict[str, Any], text: str) -> MarketResearchOutput:
+    """Deterministic research from the supplied quote only. Never invents news, earnings or ratings."""
+    ticker = str(ctx.get("ticker", "")).upper()
+    price = float(ctx.get("price") or 0.0)
+    prev = float(ctx.get("previous_close") or price or 0.0)
+    change_pct = ((price - prev) / prev * 100.0) if prev else 0.0
+    seed = _seed(ticker)
+    upside = round(8.0 + (seed % 25), 1)                       # 8..32 %
+    downside = round(4.0 + ((seed // 7) % 16), 1)              # 4..19 %
+    rr = round(upside / downside, 2) if downside else 0.0
+    confidence = 45 + (seed % 35)
+    avoid = bool(ctx.get("injection_flags")) or price <= 0 or ctx.get("asset_type") not in (None, "stock", "etf", "unknown")
+    if ctx.get("force_avoid"):
+        avoid = True
+    gaps = ["No fundamentals supplied", "No news supplied", "No analyst data supplied"]
+    return MarketResearchOutput(
+        ticker=ticker,
+        summary=(f"[MOCK] {ticker} last {price:.2f} vs previous close {prev:.2f} ({change_pct:+.2f}%). "
+                 f"Only the supplied quote was analysed; no fundamentals or news were available."),
+        bull_case=f"[MOCK] If recent price behaviour continues, a move of roughly +{upside:.0f}% is plausible.",
+        bear_case=f"[MOCK] A reversal of roughly -{downside:.0f}% is plausible given normal volatility.",
+        catalysts=["[MOCK] No catalysts supplied by the application"],
+        risks=["Small-account concentration risk", "Volatility could exceed the modelled downside",
+               "No news or fundamentals were available to the agent"],
+        time_horizon="1-3 months", confidence=confidence, expected_upside_pct=upside,
+        expected_downside_pct=downside, risk_reward_ratio=rr,
+        avoid_trade=avoid, avoid_reason=("Data unavailable or asset type not allowed" if avoid else ""),
+        data_gaps=gaps, injection_detected=bool(ctx.get("injection_flags")),
+    )
+
+
+def _portfolio_decision(ctx: dict[str, Any], text: str) -> PortfolioDecisionOutput:
+    """Deterministic decision layer: buy the best-ranked eligible research candidate that fits in cash, else HOLD."""
+    if ctx.get("force_hold"):
+        return PortfolioDecisionOutput(action="HOLD", reason_for_trade="[MOCK] Forced HOLD for testing.")
+    cash = float(ctx.get("cash") or 0.0)
+    portfolio_value = float(ctx.get("portfolio_value") or cash)
+    max_trade_pct = float(ctx.get("max_single_trade_pct") or 60.0)
+    max_position_pct = float(ctx.get("max_position_pct") or 60.0)
+    reserve_pct = float(ctx.get("min_cash_reserve_pct") or 0.0)
+    positions = {str(p.get("ticker")).upper(): p for p in (ctx.get("positions") or [])}
+    candidates = []
+    for r in ctx.get("research") or []:
+        if r.get("avoid_trade") or not r.get("price"):
+            continue
+        if float(r.get("risk_reward_ratio") or 0) < 1.5 or int(r.get("confidence") or 0) < 50:
+            continue
+        candidates.append(r)
+    candidates.sort(key=lambda r: (-float(r["risk_reward_ratio"]), -int(r["confidence"]), r["ticker"]))
+    spendable = min(cash - portfolio_value * reserve_pct / 100.0, portfolio_value * max_trade_pct / 100.0)
+    for r in candidates:
+        ticker = str(r["ticker"]).upper()
+        price = float(r["price"])
+        held_value = float(positions.get(ticker, {}).get("market_value") or 0.0)
+        room = portfolio_value * max_position_pct / 100.0 - held_value
+        budget = round(min(spendable, room), 2)
+        if budget < 1.0:
+            continue
+        qty = round(budget / price, 4)
+        total = round(qty * price, 2)
+        return PortfolioDecisionOutput(
+            action="BUY", ticker=ticker, quantity=qty, estimated_price=price, estimated_total=total,
+            thesis=f"[MOCK] {ticker} offers the best supplied risk/reward ({r['risk_reward_ratio']}x) among the watchlist.",
+            reason_for_trade=(f"[MOCK] Deploys ${total:.2f} of ${cash:.2f} cash within the {max_trade_pct:.0f}% "
+                              f"single-trade limit. Not a guaranteed outcome."),
+            catalysts=list(r.get("catalysts") or []), risks=list(r.get("risks") or []),
+            time_horizon=str(r.get("time_horizon") or "1-3 months"), confidence=int(r.get("confidence") or 0),
+            expected_upside_pct=float(r.get("expected_upside_pct") or 0),
+            expected_downside_pct=float(r.get("expected_downside_pct") or 0),
+            risk_reward_ratio=float(r.get("risk_reward_ratio") or 0),
+        )
+    return PortfolioDecisionOutput(action="HOLD",
+                                   reason_for_trade="[MOCK] No candidate met the risk/reward and confidence bar "
+                                                    "within the available cash, so holding is the right call.")
+
+
 def mock_response(agent: str, output_model: type[T], ctx: dict[str, Any], user_content: str) -> T:
     # Only the opportunity's own text drives the heuristics - never the trusted system blocks in user_content.
     text = " ".join(str(v) for v in [ctx.get("title", ""), ctx.get("description", "")]).strip() or user_content
     builders = {
         QualificationOutput: _qualification, BuyerResearchOutput: _research, SolutionOutput: _solution,
         ProposalOutput: _proposal, WorkPlanOutput: _work_plan, QAOutput: _qa, ScoutOutput: _scout,
-        RequirementsOutput: _requirements,
+        RequirementsOutput: _requirements, MarketResearchOutput: _market_research,
+        PortfolioDecisionOutput: _portfolio_decision,
     }
     builder = builders.get(output_model)
     if builder is None:
