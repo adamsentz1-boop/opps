@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -21,7 +21,7 @@ from app.models import (AgentRun, AuditLog, ComplianceRequirement, Notification,
                         SourceRun, WorkOrder, WorkTask)
 from app.normalizer import upsert_opportunity
 from app.pipeline import process_opportunity, reanalyze_opportunity
-from app.scheduler import scan_job, scheduler_status
+from app.scheduler import scan_in_background, scheduler_status
 from app.settings_service import SETTING_SPECS, get_all_settings, set_setting
 from app.sources.manual import normalize_manual
 from app.sources.registry import describe_sources
@@ -211,6 +211,23 @@ def opportunity_detail(request: Request, opportunity_id: str, db: Session = Depe
                                            ai_cost=cost_for_opportunity(db, opportunity_id)))
 
 
+@router.get("/opportunities/{opportunity_id}/proposal.md", response_class=PlainTextResponse)
+def proposal_markdown(opportunity_id: str, db: Session = Depends(get_db)):
+    """Export the current proposal as Markdown so the owner can paste it wherever they submit."""
+    opp = _get_opp(db, opportunity_id)
+    p = opp.current_proposal
+    if p is None:
+        raise HTTPException(404, "No proposal")
+    lines = [f"# {p.title}", "", p.body.strip(), ""]
+    if p.milestones:
+        lines += ["## Milestones", *[f"- {m}" for m in p.milestones], ""]
+    if p.questions_for_buyer:
+        lines += ["## Questions", *[f"- {q}" for q in p.questions_for_buyer], ""]
+    lines += [f"**Price:** ${p.price:,.0f} ({p.pricing_model})" + (f" · **Timeline:** {p.timeline_days:g} days" if p.timeline_days else ""),
+              "", f"<!-- proposal v{p.version} · opportunity {opp.id} · status {opp.status} · not submitted by the system -->"]
+    return "\n".join(lines)
+
+
 # --------------------------------------------------------------------------- sources / manual intake
 @router.get("/sources", response_class=HTMLResponse)
 def sources_page(request: Request, db: Session = Depends(get_db)):
@@ -220,12 +237,10 @@ def sources_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/sources/scan")
-def trigger_scan(db: Session = Depends(get_db)):
-    result = scan_job()
-    if result is None:
+def trigger_scan():
+    if not scan_in_background():
         return _redirect("/sources", err="A scan is already running.")
-    return _redirect("/sources", msg=f"Scan complete: processed {result.get('processed', 0)}, "
-                                     f"recommended {result.get('recommended', 0)}, rejected {result.get('rejected', 0)}.")
+    return _redirect("/sources", msg="Scan started in the background. Refresh to see results.")
 
 
 @router.post("/sources/manual")

@@ -27,6 +27,14 @@ def scan_job() -> dict | None:
         _scan_lock.release()
 
 
+def scan_in_background() -> bool:
+    """Kick off a scan on a worker thread. Returns False if one is already running."""
+    if _scan_lock.locked():
+        return False
+    threading.Thread(target=scan_job, name="manual-scan", daemon=True).start()
+    return True
+
+
 def start_scheduler() -> BackgroundScheduler | None:
     global _scheduler
     settings = get_settings()

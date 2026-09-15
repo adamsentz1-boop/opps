@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.audit import log_event
 from app.enums import OpportunityStatus
 from app.llm import LLMError, get_llm_client
-from app.models import (Buyer, Opportunity, OpportunityAnalysis, Proposal, SolutionPlan, SourceRun, utcnow)
+from app.models import (Buyer, ComplianceRequirement, Opportunity, OpportunityAnalysis, Proposal, SolutionPlan,
+                        SourceRun, utcnow)
 from app.normalizer import upsert_opportunity
 from app.notifications import notify_new_opportunity, notify_system
 from app.pipeline.rejection import post_rules, pre_rules
@@ -116,7 +117,8 @@ def process_opportunity(db: Session, opportunity_id: str) -> str:
             return "rejected"
 
         # 2. Qualification agent + scoring
-        from app.agents import ProposalAgent, QualificationAgent, ResearchAgent, SolutionArchitectAgent
+        from app.agents import (ProposalAgent, QualificationAgent, RequirementsAgent, ResearchAgent,
+                                SolutionArchitectAgent)
         q = QualificationAgent(llm).run(db, opp)
         analysis = opp.analysis or OpportunityAnalysis(opportunity_id=opp.id)
         apply_to_analysis(analysis, q, opp.budget_type, float(thresholds.target_effective_hourly_rate), llm.mode)
@@ -179,7 +181,13 @@ def process_opportunity(db: Session, opportunity_id: str) -> str:
             analysis.estimated_human_hours = s.estimated_human_hours
             analysis.profit_per_human_hour = round(analysis.expected_profit / max(s.estimated_human_hours, 0.25), 2)
 
-        # 5. Proposal draft
+        # 5. Formal requirements (Phase 2 prep). Rows are ALWAYS created unverified; only the owner verifies.
+        try:
+            extract_requirements(db, opp, RequirementsAgent(llm))
+        except LLMError as exc:
+            log.warning("requirements extraction failed for %s: %s", opp.id, exc)
+
+        # 6. Proposal draft
         p = ProposalAgent(llm).run(db, opp)
         version = (opp.proposals[-1].version + 1) if opp.proposals else 1
         proposal = Proposal(opportunity_id=opp.id, version=version, title=p.title, body=p.body, price=p.price,
@@ -192,7 +200,7 @@ def process_opportunity(db: Session, opportunity_id: str) -> str:
         log_event(db, agent="ProposalAgent", action="proposal.drafted", object_type="proposal", object_id=proposal.id,
                   details={"opportunity_id": opp.id, "price": p.price, "version": version})
 
-        # 6. Into the approval queue - nothing is submitted without the owner
+        # 7. Into the approval queue - nothing is submitted without the owner
         _set_status(db, opp, OpportunityStatus.AWAITING_APPROVAL, "System", "opportunity.recommended",
                     {"score": analysis.opportunity_score, "expected_value": analysis.expected_value})
         if analysis.opportunity_score >= float(get_setting(db, "notify_min_score")):
@@ -209,6 +217,30 @@ def process_opportunity(db: Session, opportunity_id: str) -> str:
         _set_status(db, opp, OpportunityStatus.ERROR, "System", "pipeline.error", {"error": str(exc)[:500]})
         log.exception("pipeline failed for %s", opp.id)
         return "errors"
+
+
+def extract_requirements(db: Session, opp: Opportunity, agent) -> int:
+    """Create ComplianceRequirement rows from the listing. Never touches `verified`; keeps owner-verified rows."""
+    result = agent.run(db, opp)
+    existing = {r.requirement.strip().lower(): r
+                for r in db.query(ComplianceRequirement).filter_by(opportunity_id=opp.id).all()}
+    added = 0
+    for item in result.requirements:
+        key = item.requirement.strip().lower()
+        if not key or key in existing:
+            continue
+        req = ComplianceRequirement(opportunity_id=opp.id, requirement=item.requirement, type=item.type,
+                                    mandatory=item.mandatory, evidence="", verified=False,
+                                    source_agent=agent.role)
+        db.add(req)
+        opp.requirements.append(req)
+        existing[key] = req
+        added += 1
+    db.flush()
+    if added:
+        log_event(db, agent=agent.role, action="requirements.extracted", object_type="opportunity", object_id=opp.id,
+                  details={"added": added, "summary": result.summary[:300]})
+    return added
 
 
 def reanalyze_opportunity(db: Session, opportunity_id: str, approval_id: str | None = None) -> str:
