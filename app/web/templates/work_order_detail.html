@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ wo.title }} · Work order{% endblock %}
+{% block content %}
+<h1>{{ wo.title }} <span class="pill {{ wo.status|status_class }}">{{ wo.status }}</span></h1>
+<div class="muted">Value {{ wo.contract_value|money }} · hours logged {{ wo.human_hours_logged|hours }}{% if wo.opportunity_id %} · <a href="/opportunities/{{ wo.opportunity_id }}">opportunity</a>{% endif %}</div>
+<div class="muted" style="margin:6px 0">Lifecycle: {% for s in all_statuses %}<span class="pill {{ 'good' if s == wo.status else '' }}">{{ s }}</span> {% endfor %}</div>
+
+<div class="actions">
+{% for s in next_statuses %}<form method="post" action="/work-orders/{{ wo.id }}/transition"><input type="hidden" name="status" value="{{ s }}"><input type="text" name="notes" placeholder="notes"><button class="btn">→ {{ s }}</button></form>{% endfor %}
+{% if wo.status == 'AWAITING_OWNER_APPROVAL' %}<form method="post" action="/work-orders/{{ wo.id }}/approve-delivery"><input type="text" name="notes" placeholder="notes"><button class="btn approve">APPROVE DELIVERY</button></form>{% endif %}
+<form method="post" action="/work-orders/{{ wo.id }}/hours"><input type="number" step="0.25" name="hours" placeholder="hours" style="width:100px"><button class="btn small">Log hours</button></form>
+<form method="post" action="/work-orders/{{ wo.id }}/replan"><button class="btn small">Regenerate plan</button></form>
+</div>
+
+<div class="grid g2">
+<div>
+<h2>Project plan</h2><div class="card"><pre>{{ wo.project_plan or 'Not planned yet.' }}</pre>
+<strong>Required inputs</strong><ul class="tight">{% for i in wo.required_inputs %}<li>{{ i }}</li>{% else %}<li class="muted">none listed</li>{% endfor %}</ul>
+<strong>Approval checkpoints</strong><ul class="tight">{% for c in wo.approval_checkpoints %}<li>{{ c.name }} <small>({{ c.status }})</small></li>{% endfor %}</ul>
+{% if wo.execution_notes %}<strong>Notes</strong><pre>{{ wo.execution_notes }}</pre>{% endif %}</div>
+<h2>Tasks</h2><div class="card"><table><tr><th>#</th><th>Task</th><th>Owner</th><th>Depends on</th><th class="num">Hrs</th><th>Status</th></tr>
+{% for t in wo.tasks %}<tr><td>{{ t.order + 1 }}</td><td>{{ t.title }}{% if t.requires_owner_approval %} <span class="pill warn">approval</span>{% endif %}<br><small>{{ t.description }}</small></td><td>{{ t.owner }}</td><td><small>{{ t.depends_on|join(', ') }}</small></td><td class="num">{{ t.estimated_hours }}</td>
+<td><form method="post" action="/work-tasks/{{ t.id }}/status" class="inline"><select name="status" onchange="this.form.submit()" style="width:130px">{% for s in task_statuses %}<option {{ 'selected' if s == t.status }}>{{ s }}</option>{% endfor %}</select></form></td></tr>{% endfor %}</table></div>
+</div>
+<div>
+<h2>Deliverables</h2><div class="card"><table><tr><th>Name</th><th>Status</th><th>QA notes</th></tr>{% for d in wo.deliverables %}<tr><td>{{ d.name }}<br><small>{{ d.description }}</small></td><td><span class="pill {{ d.status|status_class }}">{{ d.status }}</span></td><td>{{ d.qa_notes }}</td></tr>{% else %}<tr><td colspan="3" class="muted">none</td></tr>{% endfor %}</table></div>
+<h2>QA checklist</h2><div class="card">{% for item in wo.qa_checklist %}<form method="post" action="/work-orders/{{ wo.id }}/qa/{{ loop.index0 }}" class="inline"><label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" name="done" value="true" {{ 'checked' if item.done }} onchange="this.form.submit()" style="width:auto"> {{ item.item }}</label></form>{% else %}<span class="muted">none</span>{% endfor %}</div>
+<h2>Audit</h2><div class="card"><table><tr><th>When</th><th>Agent</th><th>Action</th><th>State</th></tr>{% for e in audit %}<tr><td>{{ e.timestamp|dt }}</td><td>{{ e.agent }}</td><td>{{ e.action }}</td><td>{{ e.previous_state or '' }}{% if e.new_state %} → {{ e.new_state }}{% endif %}</td></tr>{% endfor %}</table></div>
+</div>
+</div>
+{% endblock %}

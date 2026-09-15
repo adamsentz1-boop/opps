@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Notifications · Opportunity Engine{% endblock %}
+{% block content %}
+<h1>Notifications</h1>
+<form method="post" action="/notifications/read"><button class="btn small">Mark all read</button></form>
+{% for n in rows %}<div class="card" style="margin-top:10px;{% if not n.read %}border-color:var(--warn){% endif %}"><strong class="{{ 'warn' if n.level == 'opportunity' else n.level }}">{{ n.title }}</strong> <small>{{ n.created_at|dt }} · {{ n.channel }}</small>{% if n.opportunity_id %} · <a href="/opportunities/{{ n.opportunity_id }}">open</a>{% endif %}<pre style="margin:6px 0 0">{{ n.body }}</pre></div>{% else %}<div class="card muted">No notifications.</div>{% endfor %}
+{% endblock %}

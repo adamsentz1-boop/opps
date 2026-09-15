@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Sources · Opportunity Engine{% endblock %}
+{% block content %}
+<h1>Sources</h1>
+<div class="grid g2">
+<div>
+<div class="card">
+<strong>Scheduler:</strong> {{ 'on' if sched.enabled else 'off' }} · every {{ sched.interval_minutes }} min{% if sched.next_run %} · next {{ sched.next_run|dt }}{% endif %}
+<form method="post" action="/sources/scan" style="margin-top:8px"><button class="btn">Scan all sources now</button></form>
+</div>
+<h2>Registered adapters</h2>
+<div class="card"><table><tr><th>Source</th><th>Status</th><th>Notes / requirements</th></tr>
+{% for s in sources %}<tr><td><strong>{{ s.display_name }}</strong><br><small>{{ s.name }}</small></td><td>{% if s.enabled %}<span class="pill good">enabled</span>{% else %}<span class="pill muted">stub</span>{% endif %}</td><td><small>{{ s.note or '' }} {{ s.requirements }}</small></td></tr>{% endfor %}
+</table></div>
+<h2>Recent scans</h2>
+<div class="card"><table><tr><th>When</th><th>Source</th><th>Status</th><th class="num">Fetched</th><th class="num">New</th><th class="num">Dupes</th><th>Notes</th></tr>
+{% for r in runs %}<tr><td>{{ r.started_at|dt }}</td><td>{{ r.source }}</td><td class="{{ 'good' if r.status == 'ok' else 'bad' if r.status == 'error' else 'muted' }}">{{ r.status }}</td><td class="num">{{ r.fetched }}</td><td class="num">{{ r.inserted }}</td><td class="num">{{ r.duplicates }}</td><td><small>{{ r.error or r.notes or '' }}</small></td></tr>{% else %}<tr><td colspan="7" class="muted">No scans yet.</td></tr>{% endfor %}
+</table></div>
+</div>
+<div>
+<h2>Add an opportunity manually</h2>
+<form method="post" action="/sources/manual" class="card">
+<label>Title *</label><input type="text" name="title" required>
+<label>Description / listing text (pasted external content is treated as untrusted)</label><textarea name="description" rows="10"></textarea>
+<div class="grid g2">
+<div><label>Client / buyer</label><input type="text" name="buyer_name"></div>
+<div><label>Location</label><input type="text" name="location"></div>
+<div><label>Budget min (USD)</label><input type="number" step="1" name="budget_min"></div>
+<div><label>Budget max (USD)</label><input type="number" step="1" name="budget_max"></div>
+<div><label>Budget type</label><select name="budget_type"><option value="fixed">fixed</option><option value="hourly">hourly</option><option value="unknown">unknown</option></select></div>
+<div><label>Deadline (YYYY-MM-DD)</label><input type="text" name="deadline"></div>
+</div>
+<label>Source URL</label><input type="text" name="source_url">
+<label>Required skills (comma separated)</label><input type="text" name="required_skills">
+<label><input type="checkbox" name="run_now" value="true" checked style="width:auto"> Run the pipeline immediately</label>
+<div style="margin-top:10px"><button class="btn approve">Add opportunity</button></div>
+</form>
+<p class="muted">Feeds: configure <code>RSS_FEED_URLS</code> / <code>JSON_FEED_URLS</code> in <code>.env</code>, or drop a JSON array into <code>data/manual_inbox.json</code>.</p>
+</div>
+</div>
+{% endblock %}

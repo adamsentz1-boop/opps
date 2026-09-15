@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Settings · Opportunity Engine{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<div class="grid g2">
+<form method="post" action="/settings">
+{% for group in ['thresholds', 'pricing', 'notifications', 'owner'] %}
+<h2>{{ group }}</h2><div class="card">
+{% for s in specs if s.group == group %}
+<label>{{ s.key }} <small>— {{ s.description }}</small></label>
+{% if s.value_type == 'text' %}<textarea name="{{ s.key }}" rows="6">{{ values[s.key] }}</textarea>{% else %}<input type="text" name="{{ s.key }}" value="{{ values[s.key] }}">{% endif %}
+{% endfor %}
+</div>
+{% endfor %}
+<div style="margin-top:10px"><button class="btn approve">Save settings</button></div>
+</form>
+<div><h2>Environment (from .env, read-only, secrets never shown)</h2><div class="card"><table>
+{% for k, v in env.items() %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}
+</table><small>Change these in <code>.env</code> and restart. The API key is never displayed or logged.</small></div>
+<h2>Prompts</h2><div class="card">Agent prompts live in <code>app/prompts/*.md</code> and are re-read on every call, so you can edit them without restarting.</div>
+</div>
+</div>
+{% endblock %}

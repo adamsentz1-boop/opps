@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Audit log · Opportunity Engine{% endblock %}
+{% block content %}
+<h1>Audit log</h1>
+<form method="get" class="actions"><select name="agent" style="width:200px"><option value="">All agents</option>{% for a in agents %}<option {{ 'selected' if a == agent }}>{{ a }}</option>{% endfor %}</select><input type="text" name="action" value="{{ action }}" placeholder="action prefix e.g. approval." style="width:220px"><button class="btn">Filter</button></form>
+<div class="card"><table><tr><th>Timestamp</th><th>Agent</th><th>Action</th><th>Object</th><th>Previous → new</th><th>Human?</th><th>Approval</th><th>Details</th></tr>
+{% for e in rows %}<tr><td>{{ e.timestamp|dt }}</td><td>{{ e.agent }}</td><td>{{ e.action }}</td><td>{{ e.object_type }} {% if e.object_type == 'opportunity' and e.object_id %}<a href="/opportunities/{{ e.object_id }}">{{ e.object_id[:8] }}</a>{% elif e.object_type == 'work_order' and e.object_id %}<a href="/work-orders/{{ e.object_id }}">{{ e.object_id[:8] }}</a>{% else %}{{ (e.object_id or '')[:8] }}{% endif %}</td><td>{{ e.previous_state or '' }}{% if e.new_state %} → {{ e.new_state }}{% endif %}</td><td>{% if e.human_approval_required %}<span class="pill warn">yes</span>{% endif %}</td><td><small>{{ e.approval_id or '' }}</small></td><td><small>{{ e.details }}</small></td></tr>{% endfor %}
+</table></div>
+{% endblock %}

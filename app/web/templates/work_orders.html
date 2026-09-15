@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Work orders · Opportunity Engine{% endblock %}
+{% block content %}
+<h1>Work orders</h1>
+<p class="muted">Created automatically when you mark an opportunity WON. Delivery, invoicing and payment are recorded by you; nothing is sent to a client by the system.</p>
+<div class="card"><table><tr><th>Title</th><th>Status</th><th class="num">Value</th><th class="num">Hours logged</th><th class="num">Tasks</th><th>Updated</th></tr>
+{% for w in rows %}<tr><td><a href="/work-orders/{{ w.id }}">{{ w.title }}</a></td><td><span class="pill {{ w.status|status_class }}">{{ w.status }}</span></td><td class="num">{{ w.contract_value|money }}</td><td class="num">{{ w.human_hours_logged|hours }}</td><td class="num">{{ w.tasks|selectattr('status','equalto','DONE')|list|length }}/{{ w.tasks|length }}</td><td>{{ w.updated_at|dt }}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">No work orders yet.</td></tr>{% endfor %}</table></div>
+{% endblock %}

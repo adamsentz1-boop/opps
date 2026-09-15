@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Command center · Opportunity Engine{% endblock %}
+{% block content %}
+<p class="headline">Claude found <strong>{{ m.headline.scanned }}</strong> opportunities and recommends pursuing <strong>{{ m.headline.recommended }}</strong>.
+{% if m.headline.awaiting %} <a href="/approvals"><strong>{{ m.headline.awaiting }}</strong> awaiting your approval.</a>{% endif %}</p>
+
+<div class="hero">
+  <div class="item"><div class="k">Opportunities scanned</div><div class="v">{{ m.headline.scanned }}</div></div>
+  <div class="item"><div class="k">Auto-rejected</div><div class="v muted">{{ m.headline.auto_rejected }}</div></div>
+  <div class="item"><div class="k">Qualified</div><div class="v info">{{ m.headline.qualified }}</div></div>
+  <div class="item"><div class="k">Recommended</div><div class="v">{{ m.headline.recommended }}</div></div>
+  <div class="item"><div class="k">Awaiting approval</div><div class="v warn">{{ m.headline.awaiting }}</div></div>
+  <div class="item"><div class="k">Potential revenue</div><div class="v good">{{ m.headline.potential_revenue|money }}</div></div>
+  <div class="item"><div class="k">Expected profit</div><div class="v good">{{ m.headline.expected_profit|money }}</div></div>
+  <div class="item"><div class="k">Estimated human time</div><div class="v">{{ m.headline.human_hours|hours }}</div></div>
+  <div class="item"><div class="k">AI cost</div><div class="v">${{ '%.2f'|format(m.headline.ai_cost) }}</div></div>
+</div>
+
+<div class="grid g2">
+  <div>
+    <h2>Awaiting approval · ranked by profit per human hour</h2>
+    {% if not queue %}<div class="card muted">Nothing waiting. The scanner runs every {{ sched.interval_minutes }} min{% if sched.next_run %} (next {{ sched.next_run|dt }}){% endif %}. <a href="/sources">Add an opportunity manually</a>.</div>{% endif %}
+    {% for opp, a in queue %}
+    <div class="card opp-card" style="margin-bottom:10px">
+      <div class="title"><a href="/opportunities/{{ opp.id }}">{{ opp.title }}</a></div>
+      <div class="meta">{{ opp.source }} · {{ opp.buyer_name or 'unknown buyer' }} · budget {{ opp.budget_display }} · score <span class="{{ a.opportunity_score|score_class }}">{{ a.opportunity_score|round|int }}</span></div>
+      <div class="kv">
+        <div><div class="k">Bid</div><div class="v">{{ (opp.current_proposal.price if opp.current_proposal else a.recommended_price)|money }}</div></div>
+        <div><div class="k">Expected profit</div><div class="v good">{{ a.expected_profit|money }}</div></div>
+        <div><div class="k">Your time</div><div class="v">{{ a.estimated_human_hours|hours }}</div></div>
+        <div><div class="k">$/your hour</div><div class="v good">{{ a.profit_per_human_hour|money }}</div></div>
+        <div><div class="k">AI does</div><div class="v">{{ a.ai_completable_percentage }}%</div></div>
+        <div><div class="k">Risk</div><div class="v {{ 'bad' if a.risk > 60 else 'warn' if a.risk > 35 else 'good' }}">{{ a.risk }}</div></div>
+      </div>
+      <div class="actions">
+        <form method="post" action="/opportunities/{{ opp.id }}/approve"><button class="btn approve">Approve</button></form>
+        <form method="post" action="/opportunities/{{ opp.id }}/reject"><button class="btn reject">Reject</button></form>
+        <a class="btn" href="/opportunities/{{ opp.id }}">Review proposal →</a>
+      </div>
+    </div>
+    {% endfor %}
+    {% if queue|length == 5 %}<a href="/approvals">See the full queue →</a>{% endif %}
+  </div>
+
+  <div>
+    <h2>Today</h2>
+    <div class="grid g4">
+      <div class="card stat"><div class="label">Discovered</div><div class="value">{{ m.today.discovered }}</div></div>
+      <div class="card stat"><div class="label">Rejected</div><div class="value muted">{{ m.today.rejected }}</div></div>
+      <div class="card stat"><div class="label">Qualified</div><div class="value info">{{ m.today.qualified }}</div></div>
+      <div class="card stat"><div class="label">Awaiting you</div><div class="value warn">{{ m.today.awaiting }}</div></div>
+    </div>
+
+    <h2>Pipeline</h2>
+    <div class="card">
+      <table>
+        <tr><th>Discovered</th><th>Qualified</th><th>Awaiting</th><th>Approved</th><th>Submitted</th><th>Interviewing</th><th>Won</th><th>Lost</th></tr>
+        <tr><td>{{ m.pipeline.discovered }}</td><td>{{ m.pipeline.qualified }}</td><td class="warn">{{ m.pipeline.awaiting_approval }}</td><td>{{ m.pipeline.approved }}</td><td>{{ m.pipeline.submitted }}</td><td>{{ m.pipeline.interviewing }}</td><td class="good">{{ m.pipeline.won }}</td><td class="muted">{{ m.pipeline.lost }}</td></tr>
+      </table>
+      <small>Rejected by rules/agents: {{ m.pipeline.rejected }} · declined by you: {{ m.pipeline.declined }} · unprocessed: {{ m.pipeline.new }}{% if m.pipeline.errors %} · <span class="bad">errors: {{ m.pipeline.errors }}</span>{% endif %}</small>
+    </div>
+
+    <h2>Financial</h2>
+    <div class="grid g4">
+      <div class="card stat"><div class="label">Potential revenue</div><div class="value good">{{ m.financial.potential_revenue|money }}</div><div class="sub">active bids</div></div>
+      <div class="card stat"><div class="label">Expected value</div><div class="value">{{ m.financial.expected_value|money }}</div><div class="sub">p(win) × profit</div></div>
+      <div class="card stat"><div class="label">Won revenue</div><div class="value good">{{ m.financial.won_revenue|money }}</div></div>
+      <div class="card stat"><div class="label">Paid revenue</div><div class="value good">{{ m.financial.paid_revenue|money }}</div></div>
+      <div class="card stat"><div class="label">AI cost</div><div class="value">${{ '%.2f'|format(m.financial.ai_cost_total) }}</div><div class="sub">today ${{ '%.2f'|format(m.financial.ai_cost_today) }} · month ${{ '%.2f'|format(m.financial.ai_cost_month) }}</div></div>
+      <div class="card stat"><div class="label">Human hours</div><div class="value">{{ m.financial.human_hours|hours }}</div><div class="sub">estimated on active · logged {{ m.financial.logged_hours|hours }}</div></div>
+      <div class="card stat"><div class="label">Effective hourly rate</div><div class="value good">{{ m.financial.effective_hourly_rate|money }}</div><div class="sub">{{ 'realised' if m.financial.logged_hours else 'projected from queue' }}</div></div>
+    </div>
+  </div>
+</div>
+
+<h2>Top opportunities · expected profit / your hours</h2>
+<div class="card">
+<table>
+<tr><th>Opportunity</th><th>Status</th><th class="num">Score</th><th class="num">Bid</th><th class="num">Profit</th><th class="num">Your hrs</th><th class="num">$/hr</th><th class="num">AI %</th><th class="num">Risk</th></tr>
+{% for opp, a in m.top %}
+<tr><td><a href="/opportunities/{{ opp.id }}">{{ opp.title }}</a><br><small>{{ opp.source }} · {{ opp.buyer_name or '' }}</small></td>
+<td><span class="pill {{ opp.status|status_class }}">{{ opp.status }}</span></td>
+<td class="num {{ a.opportunity_score|score_class }}">{{ a.opportunity_score|round|int }}</td>
+<td class="num">{{ (opp.current_proposal.price if opp.current_proposal else a.recommended_price)|money }}</td>
+<td class="num good">{{ a.expected_profit|money }}</td><td class="num">{{ a.estimated_human_hours|hours }}</td>
+<td class="num good">{{ a.profit_per_human_hour|money }}</td><td class="num">{{ a.ai_completable_percentage }}%</td><td class="num">{{ a.risk }}</td></tr>
+{% else %}<tr><td colspan="9" class="muted">No qualified opportunities yet.</td></tr>{% endfor %}
+</table>
+</div>
+
+<div class="grid g2">
+  <div><h2>Latest notifications</h2><div class="card">
+    {% for n in notifications %}<div style="margin-bottom:8px"><strong class="{{ 'warn' if n.level == 'opportunity' else n.level }}">{{ n.title }}</strong> <small>{{ n.created_at|dt }}</small><pre style="margin:4px 0">{{ n.body }}</pre></div>{% else %}<span class="muted">None yet.</span>{% endfor %}
+  </div></div>
+  <div><h2>System</h2><div class="card">
+    Scheduler: {{ 'on' if sched.enabled else 'off' }} · every {{ sched.interval_minutes }} min{% if sched.next_run %} · next {{ sched.next_run|dt }}{% endif %}<br>
+    Last scan: {{ m.last_scan|dt }}<br>
+    {% if m.recent_errors %}<div class="bad" style="margin-top:8px">Pipeline errors:</div><ul class="tight">{% for e in m.recent_errors %}<li><a href="/opportunities/{{ e.id }}">{{ e.title }}</a></li>{% endfor %}</ul>{% endif %}
+    <form method="post" action="/sources/scan" style="margin-top:10px"><button class="btn small">Scan sources now</button></form>
+  </div></div>
+</div>
+{% endblock %}

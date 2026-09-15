@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Opportunity Engine{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<nav>
+  <a class="brand" href="/">⚡ Opportunity Engine</a>
+  <a href="/" class="{{ 'active' if request.url.path == '/' }}">Command center</a>
+  <a href="/approvals" class="{{ 'active' if request.url.path.startswith('/approvals') }}">Awaiting approval{% if awaiting_count %}<span class="badge">{{ awaiting_count }}</span>{% endif %}</a>
+  <a href="/opportunities" class="{{ 'active' if request.url.path.startswith('/opportunities') }}">Opportunities</a>
+  <a href="/work-orders" class="{{ 'active' if request.url.path.startswith('/work-orders') }}">Work orders</a>
+  <a href="/sources" class="{{ 'active' if request.url.path.startswith('/sources') }}">Sources</a>
+  <a href="/agent-runs" class="{{ 'active' if request.url.path.startswith('/agent-runs') }}">Agents & costs</a>
+  <a href="/audit" class="{{ 'active' if request.url.path.startswith('/audit') }}">Audit log</a>
+  <a href="/notifications" class="{{ 'active' if request.url.path.startswith('/notifications') }}">Notifications{% if unread %}<span class="badge">{{ unread }}</span>{% endif %}</a>
+  <a href="/settings" class="{{ 'active' if request.url.path.startswith('/settings') }}">Settings</a>
+  <span class="right">LLM: <strong>{{ llm_mode }}</strong></span>
+</nav>
+<main>
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+{% if error %}<div class="flash err">{{ error }}</div>{% endif %}
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

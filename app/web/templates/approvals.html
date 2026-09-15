@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Awaiting approval · Opportunity Engine{% endblock %}
+{% block content %}
+<h1>Awaiting approval <small>({{ rows|length }})</small></h1>
+<p class="muted">Approving moves an opportunity to READY_TO_SUBMIT and records an immutable approval. Nothing is sent anywhere automatically.</p>
+{% for opp, a in rows %}
+<div class="card opp-card" style="margin-bottom:12px">
+  <div class="title"><a href="/opportunities/{{ opp.id }}">{{ opp.title }}</a></div>
+  <div class="meta">{{ opp.source }} · client: {{ opp.buyer_name or 'unknown' }} · budget {{ opp.budget_display }}{% if opp.source_url %} · <a href="{{ opp.source_url }}" target="_blank" rel="noopener">source link</a>{% endif %}</div>
+  <div class="kv">
+    <div><div class="k">Recommended bid</div><div class="v">{{ (opp.current_proposal.price if opp.current_proposal else a.recommended_price)|money }}</div></div>
+    <div><div class="k">Score</div><div class="v {{ a.opportunity_score|score_class }}">{{ a.opportunity_score|round|int }}</div></div>
+    <div><div class="k">AI completion</div><div class="v">{{ a.ai_completable_percentage }}%</div></div>
+    <div><div class="k">Your hours</div><div class="v">{{ a.estimated_human_hours|hours }}</div></div>
+    <div><div class="k">Expected profit</div><div class="v good">{{ a.expected_profit|money }}</div></div>
+    <div><div class="k">Expected value</div><div class="v">{{ a.expected_value|money }}</div></div>
+    <div><div class="k">Risk</div><div class="v {{ 'bad' if a.risk > 60 else 'warn' if a.risk > 35 else 'good' }}">{{ a.risk }}</div></div>
+    <div><div class="k">$ / your hour</div><div class="v good">{{ a.profit_per_human_hour|money }}</div></div>
+  </div>
+  <p><strong>What is it?</strong> {{ a.summary }}</p>
+  {% if opp.solution_plan %}<p><strong>Can Claude do it?</strong> {{ opp.solution_plan.verdict }}</p>{% endif %}
+  {% if a.red_flags %}<p><strong class="warn">What could go wrong?</strong> {{ a.red_flags|join('; ') }}</p>{% endif %}
+  <details><summary>Proposal (v{{ opp.current_proposal.version if opp.current_proposal else '-' }})</summary><pre>{{ opp.current_proposal.body if opp.current_proposal else 'No proposal' }}</pre></details>
+  {% if opp.solution_plan %}<details><summary>Solution plan</summary><pre>{{ opp.solution_plan.proposed_solution }}
+
+{% for s in opp.solution_plan.implementation_steps %}{{ loop.index }}. {{ s }}
+{% endfor %}</pre></details>{% endif %}
+  <div class="actions">
+    <form method="post" action="/opportunities/{{ opp.id }}/approve"><input type="text" name="notes" placeholder="notes (optional)"><button class="btn approve">APPROVE</button></form>
+    <form method="post" action="/opportunities/{{ opp.id }}/reject"><input type="text" name="notes" placeholder="why?"><button class="btn reject">REJECT</button></form>
+    <a class="btn edit" href="/opportunities/{{ opp.id }}#edit">EDIT</a>
+    <form method="post" action="/opportunities/{{ opp.id }}/reanalyze"><button class="btn">REANALYZE</button></form>
+  </div>
+</div>
+{% else %}
+<div class="card muted">The queue is empty. <a href="/sources">Add or scan sources</a>.</div>
+{% endfor %}
+
+{% if ready %}
+<h2>Approved · ready to submit (you submit manually in Phase 1)</h2>
+<div class="card"><table>
+<tr><th>Opportunity</th><th class="num">Bid</th><th>Approved</th><th></th></tr>
+{% for opp in ready %}<tr><td><a href="/opportunities/{{ opp.id }}">{{ opp.title }}</a> <small>{{ opp.source }}</small></td><td class="num">{{ opp.current_proposal.price|money if opp.current_proposal else '-' }}</td><td>{{ opp.updated_at|dt }}</td>
+<td><form method="post" action="/opportunities/{{ opp.id }}/outcome" class="inline"><input type="hidden" name="outcome" value="submitted"><button class="btn small">I submitted it</button></form></td></tr>{% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

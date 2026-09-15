@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}{{ opp.title }} · Opportunity Engine{% endblock %}
+{% block content %}
+{% set a = opp.analysis %}{% set p = opp.current_proposal %}{% set plan = opp.solution_plan %}
+<h1>{{ opp.title }} <span class="pill {{ opp.status|status_class }}">{{ opp.status }}</span></h1>
+<div class="muted">{{ opp.source }} · external id {{ opp.external_id }} · client: {{ opp.buyer_name or 'unknown' }} ({{ opp.buyer_type }}) · {{ opp.location or 'location n/a' }} · budget {{ opp.budget_display }} · posted {{ opp.posted_at|dt }} · deadline {{ opp.deadline|dt }}
+{% if opp.source_url %} · <a href="{{ opp.source_url }}" target="_blank" rel="noopener">open source listing ↗</a>{% endif %}</div>
+
+{% if opp.status == 'AWAITING_APPROVAL' %}
+<div class="actions" style="margin-top:14px">
+  <form method="post" action="/opportunities/{{ opp.id }}/approve"><input type="text" name="notes" placeholder="notes (optional)"><button class="btn approve">APPROVE → READY_TO_SUBMIT</button></form>
+  <form method="post" action="/opportunities/{{ opp.id }}/reject"><input type="text" name="notes" placeholder="why?"><button class="btn reject">REJECT</button></form>
+  <a class="btn edit" href="#edit">EDIT PROPOSAL</a>
+  <form method="post" action="/opportunities/{{ opp.id }}/reanalyze"><input type="text" name="notes" placeholder="guidance for re-run"><button class="btn">REANALYZE</button></form>
+</div>
+{% elif opp.status in ['REJECTED','DECLINED','ERROR','NEW','QUALIFIED','QUALIFYING'] %}
+<div class="actions" style="margin-top:14px">
+  <form method="post" action="/opportunities/{{ opp.id }}/reanalyze"><input type="text" name="notes" placeholder="guidance for re-run"><button class="btn">REANALYZE</button></form>
+  {% if opp.status == 'NEW' %}<form method="post" action="/opportunities/{{ opp.id }}/process"><button class="btn">Run pipeline now</button></form>{% endif %}
+</div>
+{% elif opp.status == 'READY_TO_SUBMIT' %}
+<div class="card" style="margin-top:14px"><strong class="good">Approved.</strong> Submit the proposal yourself, then record it here.
+  <div class="actions"><form method="post" action="/opportunities/{{ opp.id }}/outcome"><input type="hidden" name="outcome" value="submitted"><input type="text" name="notes" placeholder="notes"><button class="btn">I submitted it</button></form>
+  <form method="post" action="/opportunities/{{ opp.id }}/reject"><input type="text" name="notes" placeholder="why?"><button class="btn reject">Withdraw</button></form></div></div>
+{% elif opp.status in ['SUBMITTED','INTERVIEWING'] %}
+<div class="card" style="margin-top:14px"><strong>Record the outcome:</strong>
+  <div class="actions">
+    {% if opp.status == 'SUBMITTED' %}<form method="post" action="/opportunities/{{ opp.id }}/outcome"><input type="hidden" name="outcome" value="interviewing"><button class="btn">Interviewing</button></form>{% endif %}
+    <form method="post" action="/opportunities/{{ opp.id }}/outcome"><input type="hidden" name="outcome" value="won"><input type="text" name="won_value" placeholder="contract value"><button class="btn approve">Won</button></form>
+    <form method="post" action="/opportunities/{{ opp.id }}/outcome"><input type="hidden" name="outcome" value="lost"><button class="btn">Lost</button></form>
+  </div></div>
+{% endif %}
+
+{% if opp.rejection_reasons %}<div class="card" style="margin-top:12px;border-color:var(--bad)"><strong class="bad">Rejected ({{ opp.rejection_stage }})</strong><ul class="tight">{% for r in opp.rejection_reasons %}<li>{{ r }}</li>{% endfor %}</ul></div>{% endif %}
+{% if opp.last_error %}<div class="card" style="margin-top:12px;border-color:var(--bad)"><strong class="bad">Last error</strong><pre>{{ opp.last_error }}</pre></div>{% endif %}
+{% if opp.injection_flags %}<div class="card" style="margin-top:12px;border-color:var(--warn)"><strong class="warn">⚠ Prompt-injection patterns detected in the listing:</strong> {{ opp.injection_flags|join(', ') }}. Agents were instructed to ignore them.</div>{% endif %}
+
+{% if a %}
+<h2>15-second read</h2>
+<div class="grid g3">
+  <div class="card"><div class="q">What is it?</div><p>{{ a.summary }}</p><small>{{ a.category }}</small></div>
+  <div class="card"><div class="q">How much could we make?</div>
+    <div class="kv"><div><div class="k">Bid</div><div class="v">{{ (p.price if p else a.recommended_price)|money }}</div></div><div><div class="k">Expected profit</div><div class="v good">{{ a.expected_profit|money }}</div></div><div><div class="k">Margin</div><div class="v">{{ (a.expected_margin*100)|round|int }}%</div></div><div><div class="k">p(win)</div><div class="v">{{ (a.estimated_probability_of_win*100)|round|int }}%</div></div><div><div class="k">Expected value</div><div class="v">{{ a.expected_value|money }}</div></div></div></div>
+  <div class="card"><div class="q">How much work will I do?</div>
+    <div class="kv"><div><div class="k">Your hours</div><div class="v">{{ a.estimated_human_hours|hours }}</div></div><div><div class="k">Agent hours</div><div class="v">{{ a.estimated_agent_hours|hours }}</div></div><div><div class="k">$ / your hour</div><div class="v good">{{ a.profit_per_human_hour|money }}</div></div><div><div class="k">AI cost</div><div class="v">${{ '%.0f'|format(a.estimated_api_cost) }}</div></div><div><div class="k">Other cost</div><div class="v">${{ '%.0f'|format(a.estimated_other_cost) }}</div></div></div>
+    {% if plan %}<small>{{ plan.human_involvement }}</small>{% endif %}</div>
+  <div class="card"><div class="q">Can Claude actually perform it?</div>{% if plan %}<p>{{ plan.verdict }}</p><small>Feasible: {{ 'yes' if plan.feasible else 'no' }} · profitable: {{ 'yes' if plan.profitable else 'no' }} · AI does {{ a.ai_completable_percentage }}%</small>{% else %}<p class="muted">Solution plan not generated (rejected before that stage).</p>{% endif %}</div>
+  <div class="card"><div class="q">What could go wrong?</div><ul class="tight">{% for r in a.red_flags %}<li>{{ r }}</li>{% endfor %}{% if plan %}{% for r in plan.risk_factors %}<li>{{ r }}</li>{% endfor %}{% for r in plan.likely_blockers %}<li class="muted">Blocker: {{ r }}</li>{% endfor %}{% endif %}{% if opp.buyer %}{% for r in opp.buyer.potential_red_flags %}<li class="warn">Buyer: {{ r }}</li>{% endfor %}{% endif %}</ul><small>Risk {{ a.risk }}/100 · competition {{ a.competition }}/100 · confidence {{ a.confidence }}/100</small></div>
+  <div class="card"><div class="q">Should I approve it?</div><div class="value" style="font-size:34px;font-weight:700" ><span class="{{ a.opportunity_score|score_class }}">{{ a.opportunity_score|round|int }}</span><small>/100</small></div><p>{{ a.reasoning }}</p></div>
+</div>
+
+<h2>Scores</h2>
+<div class="card"><div class="scores">
+{% for k, v in [('technical fit', a.technical_fit), ('AI completable', a.ai_completable_percentage), ('human effort', a.human_effort), ('profitability', a.profitability), ('scope clarity', a.scope_clarity), ('buyer quality', a.buyer_quality), ('risk', a.risk), ('competition', a.competition), ('confidence', a.confidence)] %}
+<div class="score"><div class="k">{{ k }}</div><div class="v">{{ v }}</div><div class="bar"><i style="width:{{ v }}%"></i></div></div>
+{% endfor %}
+</div></div>
+{% endif %}
+
+<div class="grid g2">
+<div>
+<h2 id="proposal">What are we proposing? {% if p %}<small>v{{ p.version }} by {{ p.author }} · {{ p.price|money }} {{ p.pricing_model }} · {{ p.timeline_days or '?' }} days</small>{% endif %}</h2>
+{% if p %}
+<div class="card"><pre>{{ p.body }}</pre>
+{% if p.questions_for_buyer %}<strong>Questions for buyer</strong><ul class="tight">{% for q in p.questions_for_buyer %}<li>{{ q }}</li>{% endfor %}</ul>{% endif %}
+{% if p.capability_claims %}<strong>Claims made about you (verify!)</strong><ul class="tight">{% for c in p.capability_claims %}<li>{{ c }}</li>{% endfor %}</ul>{% endif %}
+{% if opp.proposals|length > 1 %}<details><summary>{{ opp.proposals|length - 1 }} earlier version(s)</summary>{% for old in opp.proposals[:-1] %}<div class="muted">v{{ old.version }} · {{ old.price|money }} · {{ old.author }} · {{ old.created_at|dt }}</div><pre>{{ old.body }}</pre>{% endfor %}</details>{% endif %}
+</div>
+{% if opp.status in ['AWAITING_APPROVAL','READY_TO_SUBMIT'] %}
+<h3 id="edit">Edit proposal (creates a new version{% if opp.status == 'READY_TO_SUBMIT' %}, requires re-approval{% endif %})</h3>
+<form method="post" action="/opportunities/{{ opp.id }}/edit" class="card">
+<label>Price (USD)</label><input type="number" step="1" name="price" value="{{ p.price|int }}">
+<label>Proposal text</label><textarea name="body" rows="14">{{ p.body }}</textarea>
+<label>Notes</label><input type="text" name="notes" placeholder="why you changed it">
+<div style="margin-top:8px"><button class="btn edit">Save new version</button></div>
+</form>
+{% endif %}
+{% else %}<div class="card muted">No proposal drafted.</div>{% endif %}
+</div>
+
+<div>
+<h2>Solution plan</h2>
+{% if plan %}
+<div class="card">
+<p>{{ plan.proposed_solution }}</p>
+<strong>Implementation steps</strong><ol class="tight">{% for s in plan.implementation_steps %}<li>{{ s }}</li>{% endfor %}</ol>
+<div class="grid g2">
+<div><strong>Tools</strong><ul class="tight">{% for t in plan.required_tools %}<li>{{ t }}</li>{% endfor %}</ul>
+<strong>APIs</strong><ul class="tight">{% for t in plan.apis_required %}<li>{{ t }}</li>{% else %}<li class="muted">none</li>{% endfor %}</ul>
+<strong>External accounts</strong><ul class="tight">{% for t in plan.external_accounts_required %}<li>{{ t }}</li>{% else %}<li class="muted">none</li>{% endfor %}</ul></div>
+<div><strong>Assumptions</strong><ul class="tight">{% for t in plan.assumptions %}<li>{{ t }}</li>{% endfor %}</ul>
+<strong>Deliverables</strong><ul class="tight">{% for t in plan.deliverables %}<li>{{ t }}</li>{% endfor %}</ul></div>
+</div>
+<strong>Claude does</strong><p>{{ plan.claude_involvement }}</p><strong>You do</strong><p>{{ plan.human_involvement }}</p><strong>QA</strong><p>{{ plan.qa_strategy }}</p>
+</div>
+{% else %}<div class="card muted">Not generated.</div>{% endif %}
+
+<h2>Buyer research</h2>
+{% if opp.buyer %}{% set b = opp.buyer %}
+<div class="card">
+<div class="kv"><div><div class="k">Company</div><div class="v">{{ b.company or '?' }}</div></div><div><div class="k">Industry</div><div class="v">{{ b.industry or '?' }}</div></div><div><div class="k">Size</div><div class="v">{{ b.likely_company_size or '?' }}</div></div><div><div class="k">Confidence</div><div class="v">{{ b.confidence }}</div></div></div>
+{% if b.website %}<div>Website: <a href="{{ b.website }}" target="_blank" rel="noopener">{{ b.website }}</a></div>{% endif %}
+<p>{{ b.relevant_context }}</p><p><strong>Motivation:</strong> {{ b.project_motivation }}</p>
+{% if b.personalization %}<strong>Personalisation hooks</strong><ul class="tight">{% for x in b.personalization %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+{% if b.uncertain_items %}<strong class="warn">Uncertain / inferred</strong><ul class="tight">{% for x in b.uncertain_items %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+</div>{% else %}<div class="card muted">Not researched.</div>{% endif %}
+</div>
+</div>
+
+<h2>Compliance requirements <small>(Phase 2: certifications, representations, insurance, forms - verified only by you)</small></h2>
+<div class="card">
+<table><tr><th>Requirement</th><th>Type</th><th>Mandatory</th><th>Verified</th><th>Evidence</th><th></th></tr>
+{% for r in opp.requirements %}<tr><td>{{ r.requirement }}</td><td>{{ r.type }}</td><td>{{ 'yes' if r.mandatory else 'no' }}</td><td>{% if r.verified %}<span class="good">✔ {{ r.verified_at|dt }}</span>{% else %}<span class="bad">no</span>{% endif %}</td><td>{{ r.evidence }}</td>
+<td>{% if not r.verified %}<form method="post" action="/requirements/{{ r.id }}/verify" class="inline"><input type="text" name="evidence" placeholder="evidence (required)" style="width:200px"><button class="btn small">Verify</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">None recorded.</td></tr>{% endfor %}</table>
+<details><summary>Add requirement</summary><form method="post" action="/opportunities/{{ opp.id }}/requirements"><label>Requirement</label><input type="text" name="requirement" required><label>Type</label><select name="type">{% for t in ['certification','license','insurance','representation','contract_clause','form','deadline','capability','other'] %}<option>{{ t }}</option>{% endfor %}</select><label><input type="checkbox" name="mandatory" value="true" checked style="width:auto"> Mandatory</label><button class="btn small" style="margin-top:6px">Add</button></form></details>
+</div>
+
+<h2>Listing (untrusted external content)</h2>
+<div class="card"><pre>{{ opp.description or opp.raw_text }}</pre>
+{% if opp.required_skills %}<small>Skills: {{ opp.required_skills|join(', ') }}</small>{% endif %}</div>
+
+<div class="grid g2">
+<div><h2>Agent runs <small>AI cost ${{ '%.4f'|format(ai_cost) }}</small></h2><div class="card"><table><tr><th>When</th><th>Agent</th><th>Model</th><th>Status</th><th class="num">Tokens</th><th class="num">Cost</th></tr>
+{% for r in runs %}<tr><td>{{ r.created_at|dt }}</td><td><a href="/agent-runs/{{ r.id }}">{{ r.agent }}</a></td><td>{{ r.model }}</td><td class="{{ 'good' if r.status == 'ok' else 'bad' }}">{{ r.status }}</td><td class="num">{{ r.input_tokens }}/{{ r.output_tokens }}</td><td class="num">${{ '%.4f'|format(r.cost_usd) }}</td></tr>{% endfor %}</table></div></div>
+<div><h2>Audit trail</h2><div class="card"><table><tr><th>When</th><th>Agent</th><th>Action</th><th>State</th><th>Approval</th></tr>
+{% for e in audit %}<tr><td>{{ e.timestamp|dt }}</td><td>{{ e.agent }}</td><td>{{ e.action }}</td><td>{{ e.previous_state or '' }}{% if e.new_state %} → {{ e.new_state }}{% endif %}</td><td>{% if e.human_approval_required %}<span class="pill warn">human</span> {{ e.approval_id or '' }}{% endif %}</td></tr>{% endfor %}</table>
+{% if opp.approvals %}<h3>Approval records (immutable)</h3><table><tr><th>When</th><th>Action</th><th>Decision</th><th>By</th><th>Notes</th></tr>{% for ap in opp.approvals %}<tr><td>{{ ap.created_at|dt }}</td><td>{{ ap.action }}</td><td>{{ ap.decision }}</td><td>{{ ap.decided_by }}</td><td>{{ ap.notes }}</td></tr>{% endfor %}</table>{% endif %}
+</div></div>
+</div>
+{% if opp.work_orders %}<h2>Work orders</h2><div class="card"><ul class="tight">{% for w in opp.work_orders %}<li><a href="/work-orders/{{ w.id }}">{{ w.title }}</a> <span class="pill {{ w.status|status_class }}">{{ w.status }}</span></li>{% endfor %}</ul></div>{% endif %}
+{% endblock %}

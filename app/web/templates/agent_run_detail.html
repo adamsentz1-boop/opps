@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Agent run · Opportunity Engine{% endblock %}
+{% block content %}
+<h1>{{ run.agent }} <small>{{ run.created_at|dt }} · {{ run.model }} · {{ run.status }}</small></h1>
+<div class="muted">tokens {{ run.input_tokens }}/{{ run.output_tokens }} · ${{ '%.4f'|format(run.cost_usd) }} · {{ run.duration_ms }} ms · system prompt hash {{ run.system_prompt_hash }}{% if run.opportunity_id %} · <a href="/opportunities/{{ run.opportunity_id }}">opportunity</a>{% endif %}</div>
+{% if run.error %}<div class="card" style="border-color:var(--bad)"><pre>{{ run.error }}</pre></div>{% endif %}
+<h2>Structured response</h2><div class="card"><pre>{{ run.response_json|tojson(indent=2) }}</pre></div>
+<h2>Request (first 2000 chars; untrusted data is delimited)</h2><div class="card"><pre>{{ run.request_summary }}</pre></div>
+{% endblock %}
