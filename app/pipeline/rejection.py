@@ -52,7 +52,13 @@ def pre_rules(opp: Opportunity, t: Thresholds) -> RejectionResult:
     if _ADULT.search(text):
         reasons.append("Out-of-scope content category")
 
+    from app.models import utcnow
+    if opp.deadline and opp.deadline < utcnow():
+        reasons.append(f"Response deadline passed ({opp.deadline:%Y-%m-%d})")
+
     best_case = opp.budget_max if opp.budget_max is not None else opp.budget_min
+    if best_case is None and opp.estimated_value is not None:
+        best_case = opp.estimated_value
     if best_case is not None:
         if opp.budget_type == "hourly":
             if best_case < t.minimum_hourly_budget:

@@ -6,6 +6,7 @@ from app.sources.base import OpportunitySource
 from app.sources.json_source import GenericJSONSource
 from app.sources.manual import ManualSource
 from app.sources.rss import GenericRSSSource
+from app.sources.sam_gov import SamGovSource
 from app.sources.stubs import STUB_SOURCES
 
 _manual_source: ManualSource | None = None
@@ -23,6 +24,9 @@ def get_sources(include_stubs: bool = False) -> list[OpportunitySource]:
     sources: list[OpportunitySource] = [get_manual_source()]
     sources += [GenericRSSSource(url) for url in settings.rss_feeds]
     sources += [GenericJSONSource(url) for url in settings.json_feeds]
+    sam = SamGovSource()
+    if sam.enabled or include_stubs:
+        sources.append(sam)
     if include_stubs:
         sources += [cls() for cls in STUB_SOURCES]
     return sources

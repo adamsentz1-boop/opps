@@ -78,7 +78,17 @@ def dashboard_metrics(db: Session) -> dict:
         .filter(Opportunity.status.in_({S.AWAITING_APPROVAL.value, S.READY_TO_SUBMIT.value, S.QUALIFIED.value})) \
         .order_by(OpportunityAnalysis.profit_per_human_hour.desc()).limit(8).all()
 
+    soon = now + timedelta(days=14)
+    deadlines = db.query(Opportunity).filter(Opportunity.deadline.isnot(None), Opportunity.deadline >= now,
+                                             Opportunity.deadline <= soon,
+                                             Opportunity.status.in_({S.AWAITING_APPROVAL.value, S.READY_TO_SUBMIT.value,
+                                                                     S.QUALIFIED.value, S.NEW.value})) \
+        .order_by(Opportunity.deadline).limit(8).all()
+    bids = int(db.query(func.count(Opportunity.id)).filter(Opportunity.opportunity_type == "bid").scalar() or 0)
+
     return {
+        "deadlines": deadlines,
+        "bids": bids,
         "today": {"discovered": discovered_today, "rejected": rejected_today, "qualified": qualified_today,
                   "awaiting": awaiting},
         "headline": {"scanned": total, "auto_rejected": rejected, "qualified": qualified_ever,

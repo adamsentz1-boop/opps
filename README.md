@@ -5,9 +5,10 @@ the work**, scores them on **expected profit per human hour**, drafts the propos
 **approval queue**. Nothing is ever submitted, sent, signed, purchased, or promised without an explicit human
 decision recorded in the dashboard.
 
-Phase 1 covers freelance/contract listings from manual entry, RSS/Atom feeds and JSON feeds. Phase 2 adds
-government bids, RFPs/RFQs and post-award work execution; the data model already supports it
-(`ComplianceRequirement`, `WorkOrder`, `WorkTask`, `Deliverable`).
+Phase 1 covers freelance/contract listings from manual entry, RSS/Atom feeds and JSON feeds.
+Phase 2 adds formal bids: a SAM.gov adapter (official API), bid-package drafting with per-document owner
+sign-off, compliance requirements you verify yourself, and post-award execution where agents draft
+deliverables into a workspace, QA reviews them, and you approve delivery and invoicing.
 
 ## Quick start
 
@@ -51,6 +52,29 @@ Approving creates an immutable `approvals` row and moves the opportunity to `REA
 yourself in Phase 1 (copy button / Markdown export on the opportunity page) and then record the outcome (submitted → interviewing → won/lost). Marking an opportunity
 WON creates a `WorkOrder` with an agent-generated plan, task list, QA checklist and approval checkpoints.
 
+## Phase 2: bids, RFPs and work execution
+
+**Sources.** Set `SAM_GOV_API_KEY` (free at api.data.gov) plus `SAM_GOV_NAICS` and/or `SAM_GOV_KEYWORDS` to pull
+federal notices through the official SAM.gov API. Notices arrive as `bid`-type opportunities with agency,
+solicitation number, set-aside, NAICS and response deadline. State/local RFPs can be entered manually (the
+Sources form has a bid section) or fed through a permitted JSON/RSS feed.
+
+**Bid pipeline.** Bids go through the same qualification and solution planning. Then:
+- structural requirements are created automatically (SAM.gov registration, set-aside eligibility, deadline),
+  and `RequirementsAgent` extracts the rest (insurance, forms, representations). All start `verified=false`.
+- `BidAgent` drafts the package: cover letter, technical approach, price schedule, past performance
+  (only from your verified profile; otherwise it says so), and a forms/representations checklist marked
+  OWNER ACTION.
+- You edit and **approve each document**. Documents that still contain `[OWNER: ...]` placeholders cannot be
+  approved. The opportunity itself cannot be approved until every document is approved and every mandatory
+  requirement is verified with evidence. Approval leads to `READY_TO_SUBMIT`; you submit through the portal.
+
+**Execution after award.** Marking an opportunity WON creates a work order with an agent plan. On the work
+order page you can run agent-owned tasks: `WorkAgent` drafts the deliverable (script, workflow JSON, report,
+docs) into `workspace/<work_order>/`, `QAAgent` reviews it against the checklist, and you approve each
+deliverable and then delivery. `INVOICED` writes a draft invoice into the workspace. The system never sends,
+deploys, or invoices anything itself.
+
 ## How it works
 
 ```
@@ -65,11 +89,11 @@ Sources ──► Normalizer ──► Rule rejection ──► QualificationAge
    ProposalAgent ──► AWAITING_APPROVAL ──► notification ──► YOU ──► READY_TO_SUBMIT
 ```
 
-* **Sources** (`app/sources/`): `ManualSource`, `GenericRSSSource`, `GenericJSONSource`, plus documented stubs
-  for Upwork, SAM.gov, Pennsylvania procurement and private RFP feeds. No scraping: stubs explain what
-  official access is required.
+* **Sources** (`app/sources/`): `ManualSource`, `GenericRSSSource`, `GenericJSONSource`, `SamGovSource`
+  (official API), plus documented stubs for Upwork, Pennsylvania procurement and private RFP feeds. No
+  scraping: stubs explain what official access is required.
 * **Agents** (`app/agents/`, prompts in `app/prompts/*.md`, editable live): Scout, Qualification, Research,
-  SolutionArchitect, Requirements, Proposal, Work, QA. All use Claude structured outputs (`messages.parse`) and every call is
+  SolutionArchitect, Requirements, Bid, Proposal, Work, QA. All use Claude structured outputs (`messages.parse`) and every call is
   recorded in `agent_runs` with tokens, cost and the raw JSON.
 * **Rejection engine** (`app/pipeline/rejection.py`): deterministic rules before any tokens are spent
   (onsite, licensed, ToS violations, budget too low, full-time, unrealistic deadline, multiple prompt-injection
@@ -98,7 +122,9 @@ Sources ──► Normalizer ──► Rule rejection ──► QualificationAge
 * Agents cannot submit, send, sign, spend, self-certify, or delete. Those code paths simply do not exist in the
   agent layer; approval routes are owner-only UI/API actions.
 * `ComplianceRequirement.verified` defaults to `false` and can only be set through the owner verification route
-  with evidence. Unverified mandatory requirements block approval.
+  with evidence. Unverified mandatory requirements block approval; so do unapproved bid documents.
+* Deliverable drafts are written only under `workspace/` and read back only from there; the SAM.gov key is
+  sent as the documented query parameter and never logged (HTTP errors are reported without the URL).
 
 ## Mock mode
 
@@ -116,7 +142,7 @@ app/
   schemas.py         NormalizedOpportunity + structured agent outputs
   sanitize.py        untrusted-content handling
   normalizer.py      payload -> NormalizedOpportunity -> DB
-  sources/           adapters (manual, rss, json, stubs, registry)
+  sources/           adapters (manual, rss, json, sam_gov, stubs, registry)
   agents/            agent roles      prompts/  editable system prompts
   llm/               Claude client + mock
   pipeline/          rejection, scoring, runner

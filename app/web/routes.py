@@ -17,8 +17,8 @@ from app.db import get_db
 from app.enums import OpportunityStatus as S
 from app.enums import WorkOrderStatus, WorkTaskStatus
 from app.metrics import dashboard_metrics
-from app.models import (AgentRun, AuditLog, ComplianceRequirement, Notification, Opportunity, OpportunityAnalysis,
-                        SourceRun, WorkOrder, WorkTask)
+from app.models import (AgentRun, AuditLog, BidDocument, ComplianceRequirement, Deliverable, Notification, Opportunity,
+                        OpportunityAnalysis, SourceRun, WorkOrder, WorkTask)
 from app.normalizer import upsert_opportunity
 from app.pipeline import process_opportunity, reanalyze_opportunity
 from app.scheduler import scan_in_background, scheduler_status
@@ -181,8 +181,10 @@ def verify_requirement(requirement_id: str, evidence: str = Form(...), notes: st
 
 # --------------------------------------------------------------------------- opportunities
 @router.get("/opportunities", response_class=HTMLResponse)
-def opportunities(request: Request, status: str = "", q: str = "", db: Session = Depends(get_db)):
+def opportunities(request: Request, status: str = "", q: str = "", kind: str = "", db: Session = Depends(get_db)):
     query = db.query(Opportunity).outerjoin(OpportunityAnalysis)
+    if kind in ("bid", "freelance"):
+        query = query.filter(Opportunity.opportunity_type == kind)
     if status == "rejected":
         query = query.filter(Opportunity.status.in_([S.REJECTED.value, S.DECLINED.value]))
     elif status == "active":
@@ -197,7 +199,7 @@ def opportunities(request: Request, status: str = "", q: str = "", db: Session =
         query = query.filter((Opportunity.title.ilike(like)) | (Opportunity.description.ilike(like)))
     rows = query.order_by(Opportunity.updated_at.desc()).limit(300).all()
     counts = dict(db.query(Opportunity.status, func.count(Opportunity.id)).group_by(Opportunity.status).all())
-    return templates.TemplateResponse(request, "opportunities.html", _ctx(request, db, rows=rows, status=status, q=q,
+    return templates.TemplateResponse(request, "opportunities.html", _ctx(request, db, rows=rows, status=status, q=q, kind=kind,
                                                                  counts=counts, statuses=[s.value for s in S]))
 
 
@@ -209,6 +211,55 @@ def opportunity_detail(request: Request, opportunity_id: str, db: Session = Depe
     return templates.TemplateResponse(request, "opportunity_detail.html",
                                       _ctx(request, db, opp=opp, audit=audit, runs=runs,
                                            ai_cost=cost_for_opportunity(db, opportunity_id)))
+
+
+# --------------------------------------------------------------------------- bid documents (Phase 2)
+@router.post("/bid-documents/{doc_id}/approve")
+def bid_document_approve(doc_id: str, notes: str = Form(""), db: Session = Depends(get_db)):
+    doc = db.get(BidDocument, doc_id)
+    if doc is None:
+        raise HTTPException(404)
+    try:
+        approval_service.approve_bid_document(db, doc, notes)
+        db.commit()
+    except approval_service.ApprovalError as exc:
+        db.rollback()
+        return _redirect(f"/opportunities/{doc.opportunity_id}#bid", err=str(exc))
+    return _redirect(f"/opportunities/{doc.opportunity_id}#bid", msg=f"Approved document: {doc.name}.")
+
+
+@router.post("/bid-documents/{doc_id}/edit")
+def bid_document_edit(doc_id: str, content: str = Form(...), notes: str = Form(""), db: Session = Depends(get_db)):
+    doc = db.get(BidDocument, doc_id)
+    if doc is None:
+        raise HTTPException(404)
+    approval_service.edit_bid_document(db, doc, content, notes)
+    db.commit()
+    return _redirect(f"/opportunities/{doc.opportunity_id}#bid", msg=f"Saved {doc.name} v{doc.version} (needs approval).")
+
+
+@router.get("/bid-documents/{doc_id}.md", response_class=PlainTextResponse)
+def bid_document_markdown(doc_id: str, db: Session = Depends(get_db)):
+    doc = db.get(BidDocument, doc_id)
+    if doc is None:
+        raise HTTPException(404)
+    return doc.content + f"\n\n<!-- {doc.name} v{doc.version} · {doc.status} · not submitted by the system -->"
+
+
+@router.post("/opportunities/{opportunity_id}/bid-package/redraft")
+def bid_package_redraft(opportunity_id: str, notes: str = Form(""), db: Session = Depends(get_db)):
+    from app.agents import BidAgent
+    from app.pipeline.runner import build_bid_package
+    opp = _get_opp(db, opportunity_id)
+    if not opp.is_bid:
+        return _redirect(f"/opportunities/{opportunity_id}", err="Not a bid-type opportunity.")
+    try:
+        n = build_bid_package(db, opp, BidAgent(), notes)
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        return _redirect(f"/opportunities/{opportunity_id}#bid", err=f"Redraft failed: {exc}")
+    return _redirect(f"/opportunities/{opportunity_id}#bid", msg=f"Redrafted {n} document(s); approved ones were kept.")
 
 
 @router.get("/opportunities/{opportunity_id}/proposal.md", response_class=PlainTextResponse)
@@ -247,11 +298,16 @@ def trigger_scan():
 def add_manual(title: str = Form(...), description: str = Form(""), buyer_name: str = Form(""),
                budget_min: str = Form(""), budget_max: str = Form(""), budget_type: str = Form("fixed"),
                source_url: str = Form(""), location: str = Form(""), required_skills: str = Form(""),
-               deadline: str = Form(""), run_now: bool = Form(True), db: Session = Depends(get_db)):
+               deadline: str = Form(""), run_now: bool = Form(True), opportunity_type: str = Form("freelance"),
+               agency: str = Form(""), solicitation_number: str = Form(""), set_aside: str = Form(""),
+               naics_code: str = Form(""), estimated_value: str = Form(""), db: Session = Depends(get_db)):
     payload = {"title": title, "description": description, "buyer_name": buyer_name or None,
                "budget_min": budget_min or None, "budget_max": budget_max or None, "budget_type": budget_type,
                "source_url": source_url or None, "location": location or None, "required_skills": required_skills,
-               "deadline": deadline or None}
+               "deadline": deadline or None, "opportunity_type": opportunity_type, "agency": agency or None,
+               "solicitation_number": solicitation_number or None, "set_aside": set_aside or None,
+               "naics_code": naics_code or None, "estimated_value": estimated_value or None,
+               "buyer_type": "government" if opportunity_type == "bid" else "unknown"}
     item = normalize_manual(payload)
     opp, created = upsert_opportunity(db, item)
     db.commit()
@@ -278,8 +334,9 @@ def work_order_detail(request: Request, work_order_id: str, db: Session = Depend
         raise HTTPException(404)
     audit = db.query(AuditLog).filter(AuditLog.object_id == work_order_id).order_by(AuditLog.timestamp.desc()).limit(30).all()
     next_statuses = sorted(wo_service._ALLOWED.get(wo.status, set()))
+    contents = {d.id: wo_service.read_deliverable(d) for d in wo.deliverables}
     return templates.TemplateResponse(request, "work_order_detail.html",
-                                      _ctx(request, db, wo=wo, audit=audit, next_statuses=next_statuses,
+                                      _ctx(request, db, wo=wo, audit=audit, next_statuses=next_statuses, contents=contents,
                                            task_statuses=[s.value for s in WorkTaskStatus],
                                            all_statuses=[s.value for s in WorkOrderStatus]))
 
@@ -333,6 +390,65 @@ def work_order_hours(work_order_id: str, hours: float = Form(...), db: Session =
               details={"hours": hours, "total": wo.human_hours_logged})
     db.commit()
     return _redirect(f"/work-orders/{work_order_id}", msg=f"Logged {hours:.1f}h.")
+
+
+@router.post("/work-tasks/{task_id}/execute")
+def work_task_execute(task_id: str, inputs: str = Form(""), db: Session = Depends(get_db)):
+    task = db.get(WorkTask, task_id)
+    if task is None:
+        raise HTTPException(404)
+    try:
+        d = wo_service.execute_task(db, task, inputs)
+        db.commit()
+    except wo_service.WorkOrderError as exc:
+        db.rollback()
+        return _redirect(f"/work-orders/{task.work_order_id}", err=str(exc))
+    return _redirect(f"/work-orders/{task.work_order_id}", msg=f"Drafted '{d.name}' v{d.version}. Run QA, then review.")
+
+
+@router.post("/deliverables/{deliverable_id}/qa")
+def deliverable_qa(deliverable_id: str, db: Session = Depends(get_db)):
+    d = db.get(Deliverable, deliverable_id)
+    if d is None:
+        raise HTTPException(404)
+    try:
+        result = wo_service.run_qa(db, d)
+        db.commit()
+    except wo_service.WorkOrderError as exc:
+        db.rollback()
+        return _redirect(f"/work-orders/{d.work_order_id}", err=str(exc))
+    return _redirect(f"/work-orders/{d.work_order_id}", msg=f"QA {'passed' if result.passed else 'found issues'} for {d.name}.")
+
+
+@router.post("/deliverables/{deliverable_id}/approve")
+def deliverable_approve(deliverable_id: str, notes: str = Form(""), db: Session = Depends(get_db)):
+    d = db.get(Deliverable, deliverable_id)
+    if d is None:
+        raise HTTPException(404)
+    try:
+        approval_service.approve_deliverable(db, d, notes)
+        db.commit()
+    except approval_service.ApprovalError as exc:
+        db.rollback()
+        return _redirect(f"/work-orders/{d.work_order_id}", err=str(exc))
+    return _redirect(f"/work-orders/{d.work_order_id}", msg=f"Approved {d.name}. You deliver it yourself.")
+
+
+@router.get("/deliverables/{deliverable_id}/content", response_class=PlainTextResponse)
+def deliverable_content(deliverable_id: str, db: Session = Depends(get_db)):
+    d = db.get(Deliverable, deliverable_id)
+    if d is None:
+        raise HTTPException(404)
+    return wo_service.read_deliverable(d) or "(no content yet)"
+
+
+@router.get("/work-orders/{work_order_id}/invoice.md", response_class=PlainTextResponse)
+def work_order_invoice(work_order_id: str, db: Session = Depends(get_db)):
+    wo = db.get(WorkOrder, work_order_id)
+    if wo is None or not wo.invoice_path:
+        raise HTTPException(404, "No invoice draft yet (generated when the work order is INVOICED)")
+    from pathlib import Path
+    return Path(wo.invoice_path).read_text(encoding="utf-8")
 
 
 @router.post("/work-tasks/{task_id}/status")

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.audit import log_event
 from app.enums import ApprovalAction, ApprovalDecision, OpportunityStatus
-from app.models import Approval, ComplianceRequirement, Opportunity, Proposal, WorkOrder, utcnow
+from app.models import Approval, BidDocument, ComplianceRequirement, Opportunity, Proposal, WorkOrder, utcnow
 
 
 class ApprovalError(ValueError):
@@ -53,6 +53,13 @@ def approve_opportunity(db: Session, opp: Opportunity, notes: str = "") -> Appro
     unverified = db.query(ComplianceRequirement).filter_by(opportunity_id=opp.id, mandatory=True, verified=False).all()
     if unverified:
         raise ApprovalError("Mandatory requirements are unverified: " + "; ".join(r.requirement for r in unverified))
+    if opp.is_bid:
+        docs = db.query(BidDocument).filter_by(opportunity_id=opp.id).all()
+        if not docs:
+            raise ApprovalError("Bid package has no documents; reanalyze to draft it")
+        pending = [d.name for d in docs if d.status != "OWNER_APPROVED"]
+        if pending:
+            raise ApprovalError("Bid documents not yet approved: " + "; ".join(pending))
     previous = opp.status
     opp.status = OpportunityStatus.READY_TO_SUBMIT.value
     approval = _record(db, action=ApprovalAction.APPROVE, decision=ApprovalDecision.APPROVED,
@@ -157,6 +164,38 @@ def verify_requirement(db: Session, req: ComplianceRequirement, evidence: str, n
     return approval
 
 
+# --------------------------------------------------------------------------- bid documents
+def edit_bid_document(db: Session, doc: BidDocument, content: str, notes: str = "") -> Approval:
+    """Owner edit of a bid document: bumps the version and returns it to DRAFT (needs re-approval)."""
+    previous = doc.status
+    doc.content = content
+    doc.version += 1
+    doc.status = "DRAFT"
+    doc.approval_id = None
+    doc.author = "Owner"
+    db.flush()
+    return _record(db, action=ApprovalAction.EDIT, decision=ApprovalDecision.EDITED, object_type="bid_document",
+                   object_id=doc.id, previous_state=previous, new_state=doc.status, notes=notes,
+                   snapshot={"name": doc.name, "version": doc.version, "content": content}, opportunity_id=doc.opportunity_id)
+
+
+def approve_bid_document(db: Session, doc: BidDocument, notes: str = "") -> Approval:
+    """Owner signs off one bid document. Documents flagged requires_owner_input need the owner to confirm the
+    facts were filled in (the notes field records that)."""
+    if doc.status == "OWNER_APPROVED":
+        raise ApprovalError("Document already approved")
+    if doc.requires_owner_input and "[OWNER:" in doc.content:
+        raise ApprovalError(f"'{doc.name}' still contains [OWNER: ...] placeholders; edit it first")
+    previous = doc.status
+    doc.status = "OWNER_APPROVED"
+    approval = _record(db, action=ApprovalAction.APPROVE_BID_DOCUMENT, decision=ApprovalDecision.APPROVED,
+                       object_type="bid_document", object_id=doc.id, previous_state=previous, new_state=doc.status,
+                       notes=notes, snapshot={"name": doc.name, "version": doc.version, "content": doc.content},
+                       opportunity_id=doc.opportunity_id)
+    doc.approval_id = approval.id
+    return approval
+
+
 # --------------------------------------------------------------------------- work orders
 def approve_delivery(db: Session, work_order: WorkOrder, notes: str = "") -> Approval:
     from app.enums import WorkOrderStatus
@@ -174,4 +213,21 @@ def approve_delivery(db: Session, work_order: WorkOrder, notes: str = "") -> App
         if d.status in ("QA_PASSED", "DRAFT"):
             d.status = "APPROVED"
             d.approval_id = approval.id
+    return approval
+
+
+def approve_deliverable(db: Session, deliverable, notes: str = "") -> Approval:
+    """Owner approves a single deliverable for delivery (the work-order level gate still applies)."""
+    if deliverable.status not in ("DRAFT", "QA_PASSED"):
+        raise ApprovalError(f"Deliverable in status {deliverable.status} cannot be approved")
+    if deliverable.qa_passed is False:
+        raise ApprovalError("QA found blocking issues; regenerate or fix before approving")
+    previous = deliverable.status
+    deliverable.status = "APPROVED"
+    approval = _record(db, action=ApprovalAction.APPROVE_DELIVERY, decision=ApprovalDecision.APPROVED,
+                       object_type="deliverable", object_id=deliverable.id, previous_state=previous,
+                       new_state=deliverable.status, notes=notes,
+                       snapshot={"name": deliverable.name, "file_path": deliverable.file_path, "version": deliverable.version},
+                       work_order_id=deliverable.work_order_id)
+    deliverable.approval_id = approval.id
     return approval

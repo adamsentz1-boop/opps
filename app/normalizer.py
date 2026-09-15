@@ -102,7 +102,24 @@ def normalize(source: str, payload: dict[str, Any], field_map: dict[str, str] | 
         source_url=pick("source_url", "url", "link"), required_skills=_as_list(pick("required_skills", "skills", "tags")),
         deliverables=_as_list(pick("deliverables")), raw_text=raw_text,
         raw_payload={k: v for k, v in payload.items() if isinstance(v, (str, int, float, bool, list, dict)) or v is None},
+        opportunity_type="bid" if pick("opportunity_type", default="freelance") == "bid" else "freelance",
+        agency=clean_text(pick("agency", default=None), 255) or None,
+        solicitation_number=clean_text(pick("solicitation_number", default=None), 128) or None,
+        notice_type=clean_text(pick("notice_type", default=None), 64) or None,
+        set_aside=clean_text(pick("set_aside", default=None), 128) or None,
+        naics_code=clean_text(pick("naics_code", default=None), 16) or None,
+        estimated_value=_to_float(pick("estimated_value", default=None)),
+        place_of_performance=clean_text(pick("place_of_performance", default=None), 255) or None,
     )
+
+
+def _to_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(str(value).replace(",", "").replace("$", ""))
+    except ValueError:
+        return None
 
 
 def upsert_opportunity(db: Session, item: NormalizedOpportunity) -> tuple[Opportunity, bool]:

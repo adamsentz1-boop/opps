@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     rss_feed_urls: str = ""
     json_feed_urls: str = ""
 
+    # SAM.gov (official public API; requires a free api.data.gov key)
+    sam_gov_api_key: str = ""
+    sam_gov_naics: str = ""            # comma-separated NAICS codes, e.g. 541511,541512,541519,518210
+    sam_gov_keywords: str = ""         # comma-separated title keywords, each searched separately
+    sam_gov_notice_types: str = "o,k,p"  # o=solicitation k=combined synopsis p=presolicitation r=sources sought
+    sam_gov_days_back: int = 7
+    sam_gov_max_results: int = 50
+
     notify_adapters: str = "dashboard"
     ntfy_url: str = ""
     ntfy_topic: str = ""
@@ -55,6 +63,14 @@ class Settings(BaseSettings):
     @property
     def json_feeds(self) -> list[str]:
         return [u.strip() for u in self.json_feed_urls.split(",") if u.strip()]
+
+    @property
+    def sam_gov_naics_list(self) -> list[str]:
+        return [n.strip() for n in self.sam_gov_naics.split(",") if n.strip()]
+
+    @property
+    def sam_gov_keyword_list(self) -> list[str]:
+        return [k.strip() for k in self.sam_gov_keywords.split(",") if k.strip()]
 
     @property
     def notification_adapters(self) -> list[str]:

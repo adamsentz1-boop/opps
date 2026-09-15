@@ -35,12 +35,23 @@
 - [ ] Per-source rate limits and fetch state (last seen id / etag)
 - [ ] Alembic migrations once the schema stabilises
 
-## Phase 2
-- [ ] SAM.gov adapter via official API (api.data.gov key, UEI); notice → ComplianceRequirement extraction agent
-- [ ] State/municipal/university/school district procurement adapters where official feeds exist
-- [ ] Tune RequirementsAgent on real RFP/solicitation text (basic version already runs on every qualified listing)
-- [ ] Bid package assembly (forms, attachments) with owner sign-off per document
-- [ ] Source-specific submission integrations triggered only from READY_TO_SUBMIT by the owner
-- [ ] WorkAgent execution: agent-produced deliverables in `workspace/`, QAAgent reviews, owner approves delivery
-- [ ] Invoice generation (draft only) and payment tracking; realised effective hourly rate
+## Phase 2 - done
+- [x] SAM.gov adapter via the official public API (NAICS + keyword queries, description fetch, de-dupe)
+- [x] Bid-type opportunities: agency, solicitation, set-aside, NAICS, estimated value, deadline; deadline rule
+- [x] Structural + extracted ComplianceRequirements for bids, all unverified until the owner verifies
+- [x] BidAgent bid package (cover letter, technical, price, past performance, forms checklist) with per-document
+      owner sign-off, placeholder guard, redraft that keeps approved documents
+- [x] Work execution: WorkAgent drafts deliverables into `workspace/`, QAAgent review, per-deliverable approval,
+      delivery gate, draft invoice on INVOICED
+- [x] Forward-only SQLite column migration so existing databases upgrade in place
+- [x] Deadlines widget, bid filter, bid fields on the manual intake form
+
+## Phase 2 - next
+- [ ] Attachment ingestion for solicitations (PDF/DOCX statement of work → text for the agents)
+- [ ] State/municipal/university/school district procurement adapters where official feeds exist (PA eMarketplace
+      has none; keep manual/JSON inbox)
+- [ ] Tune BidAgent / RequirementsAgent prompts on real solicitations; page-limit and format constraints
+- [ ] Source-specific electronic submission helpers (pre-filled portal checklists), still owner-triggered
+- [ ] Work execution: multi-file deliverables, agent-run test execution in a sandbox, revision loop from QA findings
+- [ ] Realised effective hourly rate per work order on the dashboard
 - [ ] Multi-user auth if the dashboard is ever exposed beyond localhost

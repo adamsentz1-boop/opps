@@ -51,9 +51,38 @@ def init_db() -> None:
     from app import models  # noqa: F401  (register models)
     from app.settings_service import seed_default_settings
 
-    Base.metadata.create_all(bind=get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
+    _add_missing_columns(engine)
     with session_scope() as db:
         seed_default_settings(db)
+
+
+def _add_missing_columns(engine) -> None:
+    """Tiny forward-only migration: add columns that exist in the models but not in the SQLite tables."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in inspector.get_table_names():
+                continue
+            existing = {c["name"] for c in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in existing:
+                    continue
+                col_type = column.type.compile(dialect=engine.dialect)
+                default = ""
+                if column.default is not None and getattr(column.default, "arg", None) is not None \
+                        and not callable(column.default.arg):
+                    arg = column.default.arg
+                    default = f" DEFAULT {repr(arg) if isinstance(arg, str) else int(arg) if isinstance(arg, bool) else arg}"
+                conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {col_type}{default}'))
+                if col_type.upper() == "JSON" and column.default is not None and callable(column.default.arg):
+                    empty = "[]" if column.default.arg is list else "{}" if column.default.arg is dict else None
+                    if empty is not None:
+                        conn.execute(text(f'UPDATE "{table.name}" SET "{column.name}" = :v WHERE "{column.name}" IS NULL'),
+                                     {"v": empty})
 
 
 def reset_engine_for_tests(url: str) -> None:

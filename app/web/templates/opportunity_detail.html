@@ -2,7 +2,8 @@
 {% block title %}{{ opp.title }} · Opportunity Engine{% endblock %}
 {% block content %}
 {% set a = opp.analysis %}{% set p = opp.current_proposal %}{% set plan = opp.solution_plan %}
-<h1>{{ opp.title }} <span class="pill {{ opp.status|status_class }}">{{ opp.status }}</span></h1>
+<h1>{{ opp.title }} <span class="pill {{ opp.status|status_class }}">{{ opp.status }}</span>{% if opp.is_bid %} <span class="pill info">BID</span>{% endif %}</h1>
+{% if opp.is_bid %}<div class="muted">{{ opp.agency or '' }}{% if opp.solicitation_number %} · solicitation {{ opp.solicitation_number }}{% endif %}{% if opp.notice_type %} · {{ opp.notice_type }}{% endif %}{% if opp.set_aside %} · set-aside: <strong class="warn">{{ opp.set_aside }}</strong>{% endif %}{% if opp.naics_code %} · NAICS {{ opp.naics_code }}{% endif %}{% if opp.place_of_performance %} · {{ opp.place_of_performance }}{% endif %}{% if opp.estimated_value %} · est. value {{ opp.estimated_value|money }}{% endif %}</div>{% endif %}
 <div class="muted">{{ opp.source }} · external id {{ opp.external_id }} · client: {{ opp.buyer_name or 'unknown' }} ({{ opp.buyer_type }}) · {{ opp.location or 'location n/a' }} · budget {{ opp.budget_display }} · posted {{ opp.posted_at|dt }} · deadline {{ opp.deadline|dt }}
 {% if opp.source_url %} · <a href="{{ opp.source_url }}" target="_blank" rel="noopener">open source listing ↗</a>{% endif %}</div>
 
@@ -107,6 +108,26 @@
 </div>{% else %}<div class="card muted">Not researched.</div>{% endif %}
 </div>
 </div>
+
+{% if opp.is_bid %}
+<h2 id="bid">Bid package <small>every document needs your sign-off before the opportunity can be approved; nothing is submitted by the system</small></h2>
+{% for d in opp.bid_documents %}
+<div class="card" style="margin-bottom:10px;{% if d.status == 'OWNER_APPROVED' %}border-color:var(--good){% elif d.requires_owner_input %}border-color:var(--warn){% endif %}">
+  <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center">
+    <div><strong>{{ d.name }}</strong> <small>{{ d.doc_type }} · v{{ d.version }} · {{ d.author }}</small> <span class="pill {{ 'good' if d.status == 'OWNER_APPROVED' else 'warn' }}">{{ d.status }}</span></div>
+    <div class="actions" style="margin:0">
+      <a class="btn small" href="/bid-documents/{{ d.id }}.md" target="_blank">Export</a>
+      {% if d.status != 'OWNER_APPROVED' %}<form method="post" action="/bid-documents/{{ d.id }}/approve"><input type="text" name="notes" placeholder="notes"><button class="btn approve small">Approve document</button></form>{% endif %}
+    </div>
+  </div>
+  {% if d.requires_owner_input %}<div class="warn" style="margin:6px 0">Owner input required: {{ d.owner_input_notes }}</div>{% endif %}
+  <details {% if d.status != 'OWNER_APPROVED' %}open{% endif %}><summary>Content</summary><pre>{{ d.content }}</pre>
+  {% if opp.status in ['AWAITING_APPROVAL','READY_TO_SUBMIT'] %}<details><summary>Edit (creates a new version and requires re-approval)</summary><form method="post" action="/bid-documents/{{ d.id }}/edit"><textarea name="content" rows="14">{{ d.content }}</textarea><label>Notes</label><input type="text" name="notes"><div style="margin-top:6px"><button class="btn edit small">Save</button></div></form></details>{% endif %}
+  </details>
+</div>
+{% else %}<div class="card muted">No bid documents drafted yet.</div>{% endfor %}
+{% if opp.status in ['AWAITING_APPROVAL','READY_TO_SUBMIT','QUALIFIED'] %}<form method="post" action="/opportunities/{{ opp.id }}/bid-package/redraft" class="actions"><input type="text" name="notes" placeholder="guidance for redraft"><button class="btn small">Redraft unapproved documents</button></form>{% endif %}
+{% endif %}
 
 <h2>Compliance requirements <small>(Phase 2: certifications, representations, insurance, forms - verified only by you)</small></h2>
 <div class="card">

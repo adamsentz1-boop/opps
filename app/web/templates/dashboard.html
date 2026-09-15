@@ -88,6 +88,11 @@
 </table>
 </div>
 
+{% if m.deadlines %}<h2>Deadlines in the next 14 days</h2>
+<div class="card"><table><tr><th>Opportunity</th><th>Type</th><th>Status</th><th>Due</th></tr>
+{% for o in m.deadlines %}<tr><td><a href="/opportunities/{{ o.id }}">{{ o.title }}</a><br><small>{{ o.agency or o.buyer_name or '' }}</small></td><td>{% if o.is_bid %}<span class="pill info">BID</span>{% else %}freelance{% endif %}</td><td><span class="pill {{ o.status|status_class }}">{{ o.status }}</span></td><td class="warn">{{ o.deadline|dt }}</td></tr>{% endfor %}
+</table></div>{% endif %}
+
 <div class="grid g2">
   <div><h2>Latest notifications</h2><div class="card">
     {% for n in notifications %}<div style="margin-bottom:8px"><strong class="{{ 'warn' if n.level == 'opportunity' else n.level }}">{{ n.title }}</strong> <small>{{ n.created_at|dt }}</small><pre style="margin:4px 0">{{ n.body }}</pre></div>{% else %}<span class="muted">None yet.</span>{% endfor %}

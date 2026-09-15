@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 from app.audit import log_event
 from app.enums import OpportunityStatus
 from app.llm import LLMError, get_llm_client
-from app.models import (Buyer, ComplianceRequirement, Opportunity, OpportunityAnalysis, Proposal, SolutionPlan,
-                        SourceRun, utcnow)
+from app.models import (BidDocument, Buyer, ComplianceRequirement, Opportunity, OpportunityAnalysis, Proposal,
+                        SolutionPlan, SourceRun, utcnow)
 from app.normalizer import upsert_opportunity
 from app.notifications import notify_new_opportunity, notify_system
 from app.pipeline.rejection import post_rules, pre_rules
@@ -117,7 +117,7 @@ def process_opportunity(db: Session, opportunity_id: str) -> str:
             return "rejected"
 
         # 2. Qualification agent + scoring
-        from app.agents import (ProposalAgent, QualificationAgent, RequirementsAgent, ResearchAgent,
+        from app.agents import (BidAgent, ProposalAgent, QualificationAgent, RequirementsAgent, ResearchAgent,
                                 SolutionArchitectAgent)
         q = QualificationAgent(llm).run(db, opp)
         analysis = opp.analysis or OpportunityAnalysis(opportunity_id=opp.id)
@@ -181,13 +181,18 @@ def process_opportunity(db: Session, opportunity_id: str) -> str:
             analysis.estimated_human_hours = s.estimated_human_hours
             analysis.profit_per_human_hour = round(analysis.expected_profit / max(s.estimated_human_hours, 0.25), 2)
 
-        # 5. Formal requirements (Phase 2 prep). Rows are ALWAYS created unverified; only the owner verifies.
+        # 5. Formal requirements. Rows are ALWAYS created unverified; only the owner verifies.
+        ensure_structural_requirements(db, opp)
         try:
             extract_requirements(db, opp, RequirementsAgent(llm))
         except LLMError as exc:
             log.warning("requirements extraction failed for %s: %s", opp.id, exc)
 
-        # 6. Proposal draft
+        # 5b. Bids: assemble the bid package (each document needs owner sign-off before approval)
+        if opp.is_bid:
+            build_bid_package(db, opp, BidAgent(llm))
+
+        # 6. Proposal draft (for bids this is the executive summary / cover narrative)
         p = ProposalAgent(llm).run(db, opp)
         version = (opp.proposals[-1].version + 1) if opp.proposals else 1
         proposal = Proposal(opportunity_id=opp.id, version=version, title=p.title, body=p.body, price=p.price,
@@ -217,6 +222,66 @@ def process_opportunity(db: Session, opportunity_id: str) -> str:
         _set_status(db, opp, OpportunityStatus.ERROR, "System", "pipeline.error", {"error": str(exc)[:500]})
         log.exception("pipeline failed for %s", opp.id)
         return "errors"
+
+
+_SET_ASIDE_HINTS = ("set-aside", "set aside", "8(a)", "hubzone", "sdvosb", "wosb", "edwosb", "small business")
+
+
+def ensure_structural_requirements(db: Session, opp: Opportunity) -> int:
+    """Deterministic requirements for bids: registration, set-aside eligibility, deadline. Always unverified."""
+    if not opp.is_bid:
+        return 0
+    wanted: list[tuple[str, str, bool]] = [
+        ("Active SAM.gov entity registration (UEI/CAGE) or equivalent vendor registration", "form", True)]
+    if opp.set_aside and opp.set_aside.lower() not in ("none", "no set-aside", "n/a"):
+        wanted.append((f"Eligible for set-aside: {opp.set_aside}", "representation", True))
+    if opp.deadline:
+        wanted.append((f"Submit before response deadline {opp.deadline:%Y-%m-%d %H:%M} UTC", "deadline", True))
+    existing = {r.requirement.strip().lower() for r in db.query(ComplianceRequirement).filter_by(opportunity_id=opp.id)}
+    added = 0
+    for text, rtype, mandatory in wanted:
+        if text.lower() in existing:
+            continue
+        req = ComplianceRequirement(opportunity_id=opp.id, requirement=text, type=rtype, mandatory=mandatory,
+                                    verified=False, source_agent="System")
+        db.add(req)
+        opp.requirements.append(req)
+        added += 1
+    db.flush()
+    return added
+
+
+def build_bid_package(db: Session, opp: Opportunity, agent, owner_notes: str = "") -> int:
+    """Draft (or re-draft) the bid documents. Existing owner-approved documents are kept; drafts are replaced."""
+    result = agent.run(db, opp, owner_notes)
+    approved = {d.name.strip().lower(): d for d in db.query(BidDocument).filter_by(opportunity_id=opp.id, status="OWNER_APPROVED")}
+    for draft in db.query(BidDocument).filter_by(opportunity_id=opp.id, status="DRAFT").all():
+        db.delete(draft)
+    db.flush()
+    created = 0
+    for i, doc in enumerate(result.documents):
+        key = doc.name.strip().lower()
+        if key in approved:
+            continue
+        row = BidDocument(opportunity_id=opp.id, order=i, name=doc.name, doc_type=doc.doc_type, content=doc.content,
+                          requires_owner_input=doc.requires_owner_input, owner_input_notes=doc.owner_input_notes,
+                          author=agent.role)
+        db.add(row)
+        created += 1
+    db.flush()
+    db.expire(opp, ["bid_documents"])
+    if opp.analysis and result.price_total > 0:
+        a = opp.analysis
+        delta = result.price_total - a.recommended_price
+        if abs(delta) > 0.5:
+            a.recommended_price = result.price_total
+            a.expected_profit = round(a.expected_profit + delta, 2)
+            a.expected_value = round(a.estimated_probability_of_win * a.expected_profit, 2)
+            a.profit_per_human_hour = round(a.expected_profit / max(a.estimated_human_hours, 0.25), 2)
+    log_event(db, agent=agent.role, action="bid_package.drafted", object_type="opportunity", object_id=opp.id,
+              details={"documents": created, "kept_approved": len(approved), "price_total": result.price_total,
+                       "submission_checklist": result.submission_checklist, "open_questions": result.open_questions})
+    return created
 
 
 def extract_requirements(db: Session, opp: Opportunity, agent) -> int:

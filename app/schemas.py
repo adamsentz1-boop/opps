@@ -28,6 +28,15 @@ class NormalizedOpportunity(BaseModel):
     deliverables: list[str] = Field(default_factory=list)
     raw_text: str = ""
     raw_payload: dict = Field(default_factory=dict)
+    # Phase 2 bid fields
+    opportunity_type: Literal["freelance", "bid"] = "freelance"
+    agency: str | None = None
+    solicitation_number: str | None = None
+    notice_type: str | None = None
+    set_aside: str | None = None
+    naics_code: str | None = None
+    estimated_value: float | None = None
+    place_of_performance: str | None = None
 
     @field_validator("title")
     @classmethod
@@ -155,3 +164,30 @@ class RequirementsOutput(BaseModel):
     """Formal requirements found in the listing. Agents NEVER mark anything verified."""
     requirements: list[RequirementItem] = Field(default_factory=list)
     summary: str = ""
+
+
+class BidDocumentOutput(BaseModel):
+    name: str
+    doc_type: Literal["cover_letter", "technical", "price", "past_performance", "forms_checklist", "other"] = "other"
+    content: str = Field(description="Markdown content of the document")
+    requires_owner_input: bool = Field(default=False, description="True if the owner must fill in facts before use")
+    owner_input_notes: str = Field(default="", description="Exactly what the owner must supply or verify")
+
+
+class BidPackageOutput(BaseModel):
+    """A formal bid package. Nothing here is submitted; every document needs owner approval."""
+    documents: list[BidDocumentOutput] = Field(default_factory=list)
+    price_total: float = Field(ge=0, description="Total proposed price, USD")
+    pricing_basis: str = Field(default="", description="How the price was built (labour, agent hours, costs, margin)")
+    submission_checklist: list[str] = Field(default_factory=list, description="Steps the owner performs to submit")
+    open_questions: list[str] = Field(default_factory=list)
+
+
+class DeliverableDraftOutput(BaseModel):
+    """Content produced by the WorkAgent for one task/deliverable."""
+    filename: str = Field(description="Safe filename with extension, e.g. workflow.json, report.md, script.py")
+    content: str
+    summary: str = ""
+    owner_actions_required: list[str] = Field(default_factory=list,
+                                              description="Things only the owner can do (credentials, deploy, send)")
+    assumptions: list[str] = Field(default_factory=list)

@@ -11,8 +11,9 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from app.schemas import (BuyerResearchOutput, ProposalOutput, QAOutput, QualificationOutput, RequirementItem,
-                         RequirementsOutput, ScoutOutput, SolutionOutput, WorkPlanOutput, WorkTaskOutput)
+from app.schemas import (BidDocumentOutput, BidPackageOutput, BuyerResearchOutput, DeliverableDraftOutput,
+                         ProposalOutput, QAOutput, QualificationOutput, RequirementItem, RequirementsOutput,
+                         ScoutOutput, SolutionOutput, WorkPlanOutput, WorkTaskOutput)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -245,6 +246,53 @@ def _requirements(ctx: dict[str, Any], text: str) -> RequirementsOutput:
     return RequirementsOutput(requirements=items, summary=f"[MOCK] {len(items)} formal requirement(s) detected.")
 
 
+def _bid_package(ctx: dict[str, Any], text: str) -> BidPackageOutput:
+    price = float(ctx.get("recommended_price") or 5000)
+    sol = ctx.get("solicitation_number") or "[OWNER: solicitation number]"
+    title = ctx.get("title", "the requirement")
+    docs = [
+        BidDocumentOutput(name="Cover letter", doc_type="cover_letter", content=(
+            f"# Cover letter\n\nRe: Solicitation {sol}\n\nWe are pleased to submit our response to {title}. "
+            f"Our approach relies on automation-first delivery with a single accountable consultant.\n\n"
+            f"[OWNER: signature block]"), requires_owner_input=True, owner_input_notes="Add name, entity, UEI/CAGE, signature."),
+        BidDocumentOutput(name="Technical approach", doc_type="technical", content=(
+            f"# Technical approach\n\n## Understanding\n{title}\n\n## Approach\n1. Discovery and requirements confirmation\n"
+            f"2. Build using {', '.join((ctx.get('required_tools') or ['Python', 'n8n'])[:3])}\n3. Test against acceptance criteria\n"
+            f"4. Handover and documentation\n\n## Quality assurance\nAutomated tests plus owner review before every delivery.\n\n"
+            f"## Risk management\nScope control via written change requests; weekly status reports.")),
+        BidDocumentOutput(name="Price schedule", doc_type="price", content=(
+            f"# Price schedule\n\n| Item | Amount |\n|---|---|\n| Labour (consultant) | ${price*0.8:,.0f} |\n"
+            f"| Tooling / API costs | ${price*0.05:,.0f} |\n| Other direct costs | ${price*0.15:,.0f} |\n| **Total** | **${price:,.0f}** |")),
+        BidDocumentOutput(name="Past performance", doc_type="past_performance", content=(
+            "# Past performance\n\nNo verified past performance references are recorded in the owner profile. "
+            "[OWNER: add up to three verifiable references or state 'none']"), requires_owner_input=True,
+            owner_input_notes="Provide verifiable references or confirm none."),
+        BidDocumentOutput(name="Forms & representations checklist", doc_type="forms_checklist", content=(
+            "# Forms & representations (OWNER ACTION)\n\n- [ ] SAM.gov registration active (UEI / CAGE)\n- [ ] Reps & certs current\n"
+            "- [ ] W-9\n- [ ] Insurance certificates if required\n"
+            + (f"- [ ] Set-aside eligibility: {ctx.get('set_aside')}\n" if ctx.get("set_aside") else "")),
+            requires_owner_input=True, owner_input_notes="The system cannot complete or certify any form."),
+    ]
+    return BidPackageOutput(documents=docs, price_total=price,
+                            pricing_basis="[MOCK] 80% labour, 5% tooling, 15% other direct costs",
+                            submission_checklist=["Confirm submission portal/email from the solicitation",
+                                                  "Attach approved documents in required format", "Submit before deadline"],
+                            open_questions=["Page limits?", "Required file format?"])
+
+
+def _deliverable(ctx: dict[str, Any], text: str) -> DeliverableDraftOutput:
+    name = (ctx.get("deliverable") or "deliverable").lower()
+    if "workflow" in name or "n8n" in name:
+        fname, content = "workflow.json", '{"name": "%s", "nodes": [], "connections": {}, "_note": "[MOCK] TODO(owner): import into n8n"}' % ctx.get("deliverable")
+    elif "script" in name or "python" in name:
+        fname, content = "script.py", "# [MOCK] draft script\nimport os\n\nAPI_KEY = os.environ['CLIENT_API_KEY']  # TODO(owner): set in env\n\n\ndef main():\n    print('draft')\n\n\nif __name__ == '__main__':\n    main()\n"
+    else:
+        fname, content = "deliverable.md", f"# {ctx.get('deliverable')}\n\n[MOCK] Draft content for task '{ctx.get('title')}'.\n\nTODO(owner): review."
+    return DeliverableDraftOutput(filename=fname, content=content, summary="[MOCK] draft produced",
+                                  owner_actions_required=["Provide credentials via environment", "Review before delivery"],
+                                  assumptions=["Inputs as described in the plan"])
+
+
 def _scout(ctx: dict[str, Any], text: str) -> ScoutOutput:
     lower = text.lower()
     return ScoutOutput(worth_qualifying=_score_keywords(lower, PREFERRED) > 0,
@@ -257,7 +305,7 @@ def mock_response(agent: str, output_model: type[T], ctx: dict[str, Any], user_c
     builders = {
         QualificationOutput: _qualification, BuyerResearchOutput: _research, SolutionOutput: _solution,
         ProposalOutput: _proposal, WorkPlanOutput: _work_plan, QAOutput: _qa, ScoutOutput: _scout,
-        RequirementsOutput: _requirements,
+        RequirementsOutput: _requirements, BidPackageOutput: _bid_package, DeliverableDraftOutput: _deliverable,
     }
     builder = builders.get(output_model)
     if builder is None:

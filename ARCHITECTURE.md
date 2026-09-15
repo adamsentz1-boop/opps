@@ -25,7 +25,7 @@
 | `GenericRSSSource` | enabled via `RSS_FEED_URLS` | RSS 2.0 + Atom, stdlib parser |
 | `GenericJSONSource` | enabled via `JSON_FEED_URLS` | URL or file, optional field map |
 | `UpworkSource` | stub | needs approved official API/OAuth app; no scraping |
-| `SamGovSource` | stub | official public API + api.data.gov key + UEI |
+| `SamGovSource` | enabled via `SAM_GOV_API_KEY` | official public API; NAICS/keyword queries, description fetch, de-dupe by noticeId |
 | `PennsylvaniaProcurementSource` | stub | no API; permitted feed/export or manual only |
 | `PrivateRFPFeedSource` | stub | subscriber RSS/JSON under aggregator terms |
 
@@ -45,10 +45,16 @@ skills, deliverables, raw text). Parses budgets from free text (`$1,500-2,000`, 
 3. `ResearchAgent` → `Buyer` (non-fatal on failure).
 4. `SolutionArchitectAgent` → `SolutionPlan`; rejects if not feasible/profitable or owner hours too high
    (stage `solution`).
-5. `RequirementsAgent` → `ComplianceRequirement` rows (`verified=false`, owner-verified rows preserved on
+5. `ensure_structural_requirements` (bids: registration, set-aside eligibility, deadline) and
+   `RequirementsAgent` → `ComplianceRequirement` rows (`verified=false`, owner-verified rows preserved on
    reanalysis; non-fatal on failure).
-6. `ProposalAgent` → `Proposal` v1.
+5b. Bids only: `BidAgent` → `BidDocument` rows (`DRAFT`); owner-approved documents survive redrafts; the
+   package price updates the analysis economics.
+6. `ProposalAgent` → `Proposal` v1 (for bids: the executive summary).
 7. `AWAITING_APPROVAL`; notification if score ≥ `notify_min_score`.
+
+`pre_rules` also rejects any opportunity whose response deadline has already passed, and uses
+`estimated_value` as the budget for bids that state no budget.
 
 Errors set `ERROR` with `last_error`; `reanalyze_opportunity` re-runs and increments proposal versions.
 
@@ -74,7 +80,10 @@ Each role has a system prompt file (`_guardrails.md` + `<role>.md`) and a Pydant
 estimated cost. In mock mode (`app/llm/mock.py`) deterministic heuristics produce the same schemas.
 
 ### Approval system (`app/approvals.py`)
-* `approve_opportunity` → `READY_TO_SUBMIT` (blocked if any mandatory `ComplianceRequirement` is unverified)
+* `approve_opportunity` → `READY_TO_SUBMIT` (blocked if any mandatory `ComplianceRequirement` is unverified, or,
+  for bids, if any `BidDocument` is not `OWNER_APPROVED`)
+* `edit_bid_document` / `approve_bid_document` → per-document sign-off; `[OWNER: ...]` placeholders block approval
+* `approve_deliverable` → single deliverable approved for delivery (QA failure blocks it)
 * `reject_opportunity` → `DECLINED`
 * `edit_proposal` → new `Proposal` version; an edit after approval returns to `AWAITING_APPROVAL`
 * `request_reanalysis` → approval record, then pipeline re-run
@@ -84,16 +93,23 @@ estimated cost. In mock mode (`app/llm/mock.py`) deterministic heuristics produc
 
 `Approval` and `AuditLog` rows raise on update/delete (SQLAlchemy event guards).
 
-### Work execution (`app/work_orders.py`) - Phase 2 ready
+### Work execution (`app/work_orders.py`)
 `WorkOrder` statuses: NEW → PLANNING → WAITING_FOR_INPUT/IN_PROGRESS → QA → AWAITING_OWNER_APPROVAL →
 READY_FOR_DELIVERY (only via `approve_delivery`) → DELIVERED → INVOICED → PAID. `WorkAgent` produces the plan,
 tasks with dependencies, required inputs, deliverables, QA checklist and approval checkpoints. `QAAgent`
 reviews deliverable content against the checklist. Nothing is sent to a client by the system.
 
+Execution: `execute_task` (owner-triggered, agent-owned tasks only, dependencies must be DONE) asks
+`WorkAgent.draft_deliverable` for content and writes it to `workspace/<work_order_id>/<file>-v<n>.<ext>`;
+`run_qa` asks `QAAgent` to review the file against the QA checklist and sets `qa_passed`; moving to
+`AWAITING_OWNER_APPROVAL` is refused while any deliverable has failed QA; `DELIVERED` requires
+`approve_delivery`; `INVOICED` writes `invoice-draft.md` (data-driven, no LLM) for the owner to send.
+
 ### Data model (SQLite)
-`opportunities`, `opportunity_analysis`, `solution_plans`, `buyers`, `proposals`, `approvals`, `source_runs`,
-`agent_runs`, `work_orders`, `work_tasks`, `deliverables`, `compliance_requirements`, `audit_log`, `settings`,
-`notifications`.
+`opportunities`, `opportunity_analysis`, `solution_plans`, `buyers`, `proposals`, `bid_documents`, `approvals`,
+`source_runs`, `agent_runs`, `work_orders`, `work_tasks`, `deliverables`, `compliance_requirements`, `audit_log`,
+`settings`, `notifications`. `init_db` adds any columns missing from an existing SQLite file (forward-only
+migration), so upgrading keeps your data.
 
 ### Opportunity status flow
 ```
@@ -113,11 +129,14 @@ order feed the dashboard's AI cost, gross profit and effective hourly rate.
 `NTFY_URL/NTFY_TOPIC` only when both are set and `ntfy` is listed in `NOTIFY_ADAPTERS`. `email`, `slack`, `sms`
 are stubs that never transmit.
 
-## Phase 2 bid-to-cash flow
-Opportunity discovered → Qualification → **Requirements extraction** (agents create `ComplianceRequirement`
-rows, always `verified=false`) → Profitability analysis → Solution plan → Bid creation → **OWNER APPROVAL**
-→ Bid submission (source-specific integration, owner-triggered) → Award (`WON` → `WorkOrder`) → Work execution
-→ QA → **OWNER APPROVAL** (`approve_delivery`) → Delivery → Invoice → Payment tracking (`INVOICED`, `PAID`).
+## Bid-to-cash flow (implemented)
+Opportunity discovered (SAM.gov / manual / feed) → Qualification → Requirements extraction (always
+`verified=false`) → Profitability analysis → Solution plan → Bid package (`BidDocument` drafts) →
+**OWNER APPROVAL** (each document, each mandatory requirement, then the opportunity) → `READY_TO_SUBMIT` →
+owner submits through the portal and records `SUBMITTED` → Award (`WON` → `WorkOrder`) → Work execution
+(agent drafts in `workspace/`) → QA (`QAAgent`) → **OWNER APPROVAL** (`approve_deliverable`,
+`approve_delivery`) → Delivery (owner) → Invoice draft → Payment tracking (`INVOICED`, `PAID`).
+Source-specific electronic submission is deliberately not implemented; every submission is a human act.
 
 ## Extending
 * New source: subclass `OpportunitySource`, return `NormalizedOpportunity` items, register in

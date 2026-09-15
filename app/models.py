@@ -55,6 +55,15 @@ class Opportunity(TimestampMixin, Base):
     raw_text: Mapped[str] = mapped_column(Text, default="")
     raw_payload: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(32), default=OpportunityStatus.NEW.value, index=True)
+    # Phase 2: formal bids / RFPs
+    opportunity_type: Mapped[str] = mapped_column(String(16), default="freelance", index=True)  # freelance | bid
+    agency: Mapped[str | None] = mapped_column(String(255))
+    solicitation_number: Mapped[str | None] = mapped_column(String(128))
+    notice_type: Mapped[str | None] = mapped_column(String(64))
+    set_aside: Mapped[str | None] = mapped_column(String(128))
+    naics_code: Mapped[str | None] = mapped_column(String(16))
+    estimated_value: Mapped[float | None] = mapped_column(Float)
+    place_of_performance: Mapped[str | None] = mapped_column(String(255))
     rejection_reasons: Mapped[list] = mapped_column(JSON, default=list)
     rejection_stage: Mapped[str | None] = mapped_column(String(32))  # rules | thresholds | solution | owner
     injection_flags: Mapped[list] = mapped_column(JSON, default=list)
@@ -76,6 +85,12 @@ class Opportunity(TimestampMixin, Base):
     work_orders: Mapped[list["WorkOrder"]] = relationship(back_populates="opportunity")
     requirements: Mapped[list["ComplianceRequirement"]] = relationship(back_populates="opportunity",
                                                                        cascade="all, delete-orphan")
+    bid_documents: Mapped[list["BidDocument"]] = relationship(back_populates="opportunity",
+                                                              cascade="all, delete-orphan", order_by="BidDocument.order")
+
+    @property
+    def is_bid(self) -> bool:
+        return self.opportunity_type == "bid"
 
     @property
     def current_proposal(self) -> "Proposal | None":
@@ -201,6 +216,30 @@ class Proposal(TimestampMixin, Base):
     opportunity: Mapped[Opportunity] = relationship(back_populates="proposals")
 
 
+class BidDocument(TimestampMixin, Base):
+    """One document of a formal bid package (technical approach, price schedule, forms checklist, ...).
+
+    Every document must be individually approved by the owner before the opportunity can be approved.
+    """
+    __tablename__ = "bid_documents"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    opportunity_id: Mapped[str] = mapped_column(ForeignKey("opportunities.id", ondelete="CASCADE"), index=True)
+    order: Mapped[int] = mapped_column(Integer, default=0)
+    name: Mapped[str] = mapped_column(String(255))
+    doc_type: Mapped[str] = mapped_column(String(32), default="other")  # technical | price | cover_letter | past_performance | forms_checklist | other
+    content: Mapped[str] = mapped_column(Text, default="")
+    requires_owner_input: Mapped[bool] = mapped_column(Boolean, default=False)
+    owner_input_notes: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), default="DRAFT")  # DRAFT | OWNER_APPROVED
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    approval_id: Mapped[str | None] = mapped_column(String(32))
+    author: Mapped[str] = mapped_column(String(64), default="BidAgent")
+    file_path: Mapped[str | None] = mapped_column(String(1000))
+
+    opportunity: Mapped[Opportunity] = relationship(back_populates="bid_documents")
+
+
 # --------------------------------------------------------------------------- approvals (immutable)
 class Approval(Base):
     """Immutable record of a human decision. Rows are never updated or deleted."""
@@ -292,6 +331,8 @@ class WorkOrder(TimestampMixin, Base):
     paid_at: Mapped[datetime | None] = mapped_column(DateTime)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime)
     delivery_approval_id: Mapped[str | None] = mapped_column(String(32))
+    invoice_path: Mapped[str | None] = mapped_column(String(1000))
+    workspace_path: Mapped[str | None] = mapped_column(String(1000))
 
     opportunity: Mapped[Opportunity | None] = relationship(back_populates="work_orders")
     tasks: Mapped[list["WorkTask"]] = relationship(back_populates="work_order", cascade="all, delete-orphan",
@@ -313,6 +354,8 @@ class WorkTask(TimestampMixin, Base):
     depends_on: Mapped[list] = mapped_column(JSON, default=list)   # list of task titles/ids
     estimated_hours: Mapped[float] = mapped_column(Float, default=0.0)
     requires_owner_approval: Mapped[bool] = mapped_column(Boolean, default=False)
+    output_deliverable: Mapped[str | None] = mapped_column(String(255))  # name of the deliverable this task produces
+    result_notes: Mapped[str] = mapped_column(Text, default="")
 
     work_order: Mapped[WorkOrder] = relationship(back_populates="tasks")
 
@@ -327,7 +370,10 @@ class Deliverable(TimestampMixin, Base):
     file_path: Mapped[str | None] = mapped_column(String(1000))
     status: Mapped[str] = mapped_column(String(32), default=DeliverableStatus.PLANNED.value)
     qa_notes: Mapped[str] = mapped_column(Text, default="")
+    qa_passed: Mapped[bool | None] = mapped_column(Boolean)
     approval_id: Mapped[str | None] = mapped_column(String(32))
+    task_id: Mapped[str | None] = mapped_column(String(32))
+    version: Mapped[int] = mapped_column(Integer, default=0)
 
     work_order: Mapped[WorkOrder] = relationship(back_populates="deliverables")
 

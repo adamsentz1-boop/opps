@@ -1,5 +1,7 @@
 """Placeholder adapters for sources that need official API access or credentials.
 
+(SAM.gov has a real adapter in `app/sources/sam_gov.py`.)
+
 None of these scrape. Each documents exactly what is required to enable it. When enabled in a later phase,
 implement `fetch_new_opportunities` using the official, permitted integration and register it in the registry.
 """
@@ -35,19 +37,6 @@ class UpworkSource(_StubSource):
         return f"https://www.upwork.com/jobs/{external_id}"
 
 
-class SamGovSource(_StubSource):
-    source_name = "sam_gov"
-    display_name = "SAM.gov (federal contract opportunities)"
-    _requirements = (
-        "Official public API: https://open.gsa.gov/api/get-opportunities-public-api/ . Requires a free api.data.gov "
-        "key (SAM_GOV_API_KEY) and an entity registration (UEI) before bidding. Phase 2: map notices to "
-        "ComplianceRequirement rows (set-asides, NAICS, representations, insurance)."
-    )
-
-    def source_url(self, external_id: str) -> str | None:
-        return f"https://sam.gov/opp/{external_id}/view"
-
-
 class PennsylvaniaProcurementSource(_StubSource):
     source_name = "pa_procurement"
     display_name = "Pennsylvania eMarketplace / PA Supplier Portal"
@@ -67,4 +56,4 @@ class PrivateRFPFeedSource(_StubSource):
     )
 
 
-STUB_SOURCES: list[type[_StubSource]] = [UpworkSource, SamGovSource, PennsylvaniaProcurementSource, PrivateRFPFeedSource]
+STUB_SOURCES: list[type[_StubSource]] = [UpworkSource, PennsylvaniaProcurementSource, PrivateRFPFeedSource]

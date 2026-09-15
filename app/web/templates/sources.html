@@ -31,6 +31,15 @@
 <div><label>Deadline (YYYY-MM-DD)</label><input type="text" name="deadline"></div>
 </div>
 <label>Source URL</label><input type="text" name="source_url">
+<details><summary>Formal bid / RFP fields (Phase 2)</summary>
+<div class="grid g2">
+<div><label>Type</label><select name="opportunity_type"><option value="freelance">freelance</option><option value="bid">bid / RFP</option></select></div>
+<div><label>Agency / issuing organisation</label><input type="text" name="agency"></div>
+<div><label>Solicitation number</label><input type="text" name="solicitation_number"></div>
+<div><label>Set-aside</label><input type="text" name="set_aside" placeholder="e.g. Total Small Business"></div>
+<div><label>NAICS</label><input type="text" name="naics_code"></div>
+<div><label>Estimated value (USD)</label><input type="text" name="estimated_value"></div>
+</div></details>
 <label>Required skills (comma separated)</label><input type="text" name="required_skills">
 <label><input type="checkbox" name="run_now" value="true" checked style="width:auto"> Run the pipeline immediately</label>
 <div style="margin-top:10px"><button class="btn approve">Add opportunity</button></div>

@@ -38,6 +38,12 @@ class ManualOpportunityIn(BaseModel):
     required_skills: list[str] = []
     deliverables: list[str] = []
     deadline: str | None = None
+    opportunity_type: str = "freelance"
+    agency: str | None = None
+    solicitation_number: str | None = None
+    set_aside: str | None = None
+    naics_code: str | None = None
+    estimated_value: float | None = None
     process: bool = True
 
 
@@ -56,6 +62,8 @@ def _opp_json(opp: Opportunity) -> dict[str, Any]:
     p = opp.current_proposal
     return {
         "id": opp.id, "source": opp.source, "external_id": opp.external_id, "title": opp.title,
+        "opportunity_type": opp.opportunity_type, "agency": opp.agency, "set_aside": opp.set_aside,
+        "deadline": opp.deadline, "bid_documents": [{"id": d.id, "name": d.name, "status": d.status} for d in opp.bid_documents],
         "buyer_name": opp.buyer_name, "status": opp.status, "budget_min": opp.budget_min, "budget_max": opp.budget_max,
         "budget_type": opp.budget_type, "source_url": opp.source_url, "created_at": opp.created_at,
         "rejection_reasons": opp.rejection_reasons, "injection_flags": opp.injection_flags,
