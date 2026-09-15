@@ -11,8 +11,8 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from app.schemas import (BuyerResearchOutput, ProposalOutput, QAOutput, QualificationOutput, ScoutOutput,
-                         SolutionOutput, WorkPlanOutput, WorkTaskOutput)
+from app.schemas import (BuyerResearchOutput, ProposalOutput, QAOutput, QualificationOutput, RequirementItem,
+                         RequirementsOutput, ScoutOutput, SolutionOutput, WorkPlanOutput, WorkTaskOutput)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -223,6 +223,28 @@ def _qa(ctx: dict[str, Any], text: str) -> QAOutput:
                     summary="Mock QA: manual owner review still required.")
 
 
+_REQ_PATTERNS = [
+    ("soc 2", "SOC 2 report or attestation", "certification"), ("iso 27001", "ISO 27001 certification", "certification"),
+    ("cmmc", "CMMC certification", "certification"), ("hipaa", "HIPAA compliance / BAA", "representation"),
+    ("insurance", "Proof of insurance", "insurance"), ("liability insurance", "General liability insurance", "insurance"),
+    ("w-9", "W-9 form", "form"), ("w9", "W-9 form", "form"), ("nda", "Signed NDA", "contract_clause"),
+    ("background check", "Background check", "representation"), ("us citizen", "US citizenship", "representation"),
+    ("u.s. citizen", "US citizenship", "representation"), ("vendor registration", "Vendor/portal registration", "form"),
+    ("licensed", "Professional licence", "license"), ("certified", "Named certification", "certification"),
+]
+
+
+def _requirements(ctx: dict[str, Any], text: str) -> RequirementsOutput:
+    lower = text.lower()
+    seen, items = set(), []
+    for key, label, rtype in _REQ_PATTERNS:
+        if key in lower and label not in seen:
+            seen.add(label)
+            items.append(RequirementItem(requirement=label, type=rtype, mandatory="must" in lower or "required" in lower,
+                                         notes=f"[MOCK] keyword '{key}' found in listing"))
+    return RequirementsOutput(requirements=items, summary=f"[MOCK] {len(items)} formal requirement(s) detected.")
+
+
 def _scout(ctx: dict[str, Any], text: str) -> ScoutOutput:
     lower = text.lower()
     return ScoutOutput(worth_qualifying=_score_keywords(lower, PREFERRED) > 0,
@@ -235,6 +257,7 @@ def mock_response(agent: str, output_model: type[T], ctx: dict[str, Any], user_c
     builders = {
         QualificationOutput: _qualification, BuyerResearchOutput: _research, SolutionOutput: _solution,
         ProposalOutput: _proposal, WorkPlanOutput: _work_plan, QAOutput: _qa, ScoutOutput: _scout,
+        RequirementsOutput: _requirements,
     }
     builder = builders.get(output_model)
     if builder is None:

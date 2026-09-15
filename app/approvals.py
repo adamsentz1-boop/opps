@@ -50,7 +50,7 @@ def approve_opportunity(db: Session, opp: Opportunity, notes: str = "") -> Appro
         raise ApprovalError(f"Cannot approve an opportunity in status {opp.status}")
     if not opp.current_proposal:
         raise ApprovalError("No proposal to approve")
-    unverified = [r for r in opp.requirements if r.mandatory and not r.verified]
+    unverified = db.query(ComplianceRequirement).filter_by(opportunity_id=opp.id, mandatory=True, verified=False).all()
     if unverified:
         raise ApprovalError("Mandatory requirements are unverified: " + "; ".join(r.requirement for r in unverified))
     previous = opp.status

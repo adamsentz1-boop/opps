@@ -40,8 +40,30 @@ class _ExternalStub(NotificationAdapter):
 
 
 class NtfyAdapter(_ExternalStub):
+    """Push notifications via a self-hosted or public ntfy server.
+
+    Sends ONLY when (a) `ntfy` is listed in NOTIFY_ADAPTERS and (b) NTFY_URL and NTFY_TOPIC are set. The
+    payload is the notification text (no secrets, no proposal bodies). Failures never break the pipeline.
+    """
     name = "ntfy"
     required_env = ("ntfy_url", "ntfy_topic")
+
+    def send(self, db, message: NotificationMessage) -> bool:
+        if not self.configured:
+            log.info("ntfy adapter not configured; skipping external send")
+            return False
+        import urllib.request
+        settings = get_settings()
+        url = settings.ntfy_url.rstrip("/") + "/" + settings.ntfy_topic.strip("/")
+        headers = {"Title": message.title.encode("ascii", "ignore").decode(), "Content-Type": "text/plain; charset=utf-8",
+                   "Priority": "high" if message.level == "opportunity" else "default"}
+        req = urllib.request.Request(url, data=message.body.encode("utf-8"), headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 - owner-configured URL
+                return 200 <= resp.status < 300
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ntfy send failed: %s", exc)
+            return False
 
 
 class EmailAdapter(_ExternalStub):

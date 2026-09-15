@@ -61,7 +61,8 @@
 <div>
 <h2 id="proposal">What are we proposing? {% if p %}<small>v{{ p.version }} by {{ p.author }} · {{ p.price|money }} {{ p.pricing_model }} · {{ p.timeline_days or '?' }} days</small>{% endif %}</h2>
 {% if p %}
-<div class="card"><pre>{{ p.body }}</pre>
+<div class="card"><pre id="proposal-body">{{ p.body }}</pre>
+<div class="actions" style="margin:6px 0"><button class="btn small" type="button" onclick="navigator.clipboard.writeText(document.getElementById('proposal-body').innerText).then(()=>{this.textContent='Copied'})">Copy text</button> <a class="btn small" href="/opportunities/{{ opp.id }}/proposal.md" target="_blank">Export markdown</a></div>
 {% if p.questions_for_buyer %}<strong>Questions for buyer</strong><ul class="tight">{% for q in p.questions_for_buyer %}<li>{{ q }}</li>{% endfor %}</ul>{% endif %}
 {% if p.capability_claims %}<strong>Claims made about you (verify!)</strong><ul class="tight">{% for c in p.capability_claims %}<li>{{ c }}</li>{% endfor %}</ul>{% endif %}
 {% if opp.proposals|length > 1 %}<details><summary>{{ opp.proposals|length - 1 }} earlier version(s)</summary>{% for old in opp.proposals[:-1] %}<div class="muted">v{{ old.version }} · {{ old.price|money }} · {{ old.author }} · {{ old.created_at|dt }}</div><pre>{{ old.body }}</pre>{% endfor %}</details>{% endif %}

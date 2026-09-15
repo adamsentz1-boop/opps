@@ -5,3 +5,4 @@ from app.agents.proposal import ProposalAgent  # noqa: F401
 from app.agents.work import WorkAgent  # noqa: F401
 from app.agents.qa import QAAgent  # noqa: F401
 from app.agents.scout import ScoutAgent  # noqa: F401
+from app.agents.requirements import RequirementsAgent  # noqa: F401

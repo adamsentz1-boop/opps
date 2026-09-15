@@ -141,3 +141,17 @@ class ScoutOutput(BaseModel):
     budget_min: float | None = None
     budget_max: float | None = None
     budget_type: Literal["fixed", "hourly", "unknown"] = "unknown"
+
+
+class RequirementItem(BaseModel):
+    requirement: str
+    type: Literal["certification", "license", "insurance", "representation", "contract_clause", "form",
+                  "deadline", "capability", "other"] = "other"
+    mandatory: bool = True
+    notes: str = ""
+
+
+class RequirementsOutput(BaseModel):
+    """Formal requirements found in the listing. Agents NEVER mark anything verified."""
+    requirements: list[RequirementItem] = Field(default_factory=list)
+    summary: str = ""

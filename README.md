@@ -46,7 +46,7 @@ what is it, how much could we make, how much of my time, can Claude actually do 
 what are we proposing, and should I approve it. Buttons: **APPROVE**, **REJECT**, **EDIT**, **REANALYZE**.
 
 Approving creates an immutable `approvals` row and moves the opportunity to `READY_TO_SUBMIT`. You submit it
-yourself in Phase 1 and then record the outcome (submitted → interviewing → won/lost). Marking an opportunity
+yourself in Phase 1 (copy button / Markdown export on the opportunity page) and then record the outcome (submitted → interviewing → won/lost). Marking an opportunity
 WON creates a `WorkOrder` with an agent-generated plan, task list, QA checklist and approval checkpoints.
 
 ## How it works
@@ -58,6 +58,8 @@ Sources ──► Normalizer ──► Rule rejection ──► QualificationAge
         │
    SolutionArchitectAgent ("can we actually do this profitably?") ──► reject if not
         │
+   RequirementsAgent (ComplianceRequirement rows, always unverified)
+        │
    ProposalAgent ──► AWAITING_APPROVAL ──► notification ──► YOU ──► READY_TO_SUBMIT
 ```
 
@@ -65,7 +67,7 @@ Sources ──► Normalizer ──► Rule rejection ──► QualificationAge
   for Upwork, SAM.gov, Pennsylvania procurement and private RFP feeds. No scraping: stubs explain what
   official access is required.
 * **Agents** (`app/agents/`, prompts in `app/prompts/*.md`, editable live): Scout, Qualification, Research,
-  SolutionArchitect, Proposal, Work, QA. All use Claude structured outputs (`messages.parse`) and every call is
+  SolutionArchitect, Requirements, Proposal, Work, QA. All use Claude structured outputs (`messages.parse`) and every call is
   recorded in `agent_runs` with tokens, cost and the raw JSON.
 * **Rejection engine** (`app/pipeline/rejection.py`): deterministic rules before any tokens are spent
   (onsite, licensed, ToS violations, budget too low, full-time, unrealistic deadline, multiple prompt-injection
@@ -79,8 +81,8 @@ Sources ──► Normalizer ──► Rule rejection ──► QualificationAge
   was required, and the approval id.
 * **Settings** (`/settings`): thresholds, pricing targets, the verified owner profile and preferred/avoided work,
   editable without code changes.
-* **Notifications**: dashboard adapter enabled; ntfy/email/Slack/SMS adapters are stubs that never send unless
-  configured and enabled explicitly.
+* **Notifications**: dashboard adapter enabled by default. ntfy push works when you opt in
+  (`NOTIFY_ADAPTERS=dashboard,ntfy` plus `NTFY_URL`/`NTFY_TOPIC`); email/Slack/SMS are stubs that never send.
 
 ## Security model
 

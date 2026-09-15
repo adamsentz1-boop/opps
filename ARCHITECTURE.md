@@ -45,8 +45,10 @@ skills, deliverables, raw text). Parses budgets from free text (`$1,500-2,000`, 
 3. `ResearchAgent` → `Buyer` (non-fatal on failure).
 4. `SolutionArchitectAgent` → `SolutionPlan`; rejects if not feasible/profitable or owner hours too high
    (stage `solution`).
-5. `ProposalAgent` → `Proposal` v1.
-6. `AWAITING_APPROVAL`; notification if score ≥ `notify_min_score`.
+5. `RequirementsAgent` → `ComplianceRequirement` rows (`verified=false`, owner-verified rows preserved on
+   reanalysis; non-fatal on failure).
+6. `ProposalAgent` → `Proposal` v1.
+7. `AWAITING_APPROVAL`; notification if score ≥ `notify_min_score`.
 
 Errors set `ERROR` with `last_error`; `reanalyze_opportunity` re-runs and increments proposal versions.
 
@@ -107,9 +109,9 @@ Per-run cost from token usage × model price table; summaries per agent, day, mo
 order feed the dashboard's AI cost, gross profit and effective hourly rate.
 
 ### Notifications (`app/notifications/`)
-`NotificationAdapter.send()`; `DashboardAdapter` persists rows. `ntfy`, `email`, `slack`, `sms` are stubs
-that require configuration and explicit inclusion in `NOTIFY_ADAPTERS`, and still do not transmit until their
-transport is implemented and reviewed.
+`NotificationAdapter.send()`; `DashboardAdapter` persists rows. `NtfyAdapter` POSTs the notification text to
+`NTFY_URL/NTFY_TOPIC` only when both are set and `ntfy` is listed in `NOTIFY_ADAPTERS`. `email`, `slack`, `sms`
+are stubs that never transmit.
 
 ## Phase 2 bid-to-cash flow
 Opportunity discovered → Qualification → **Requirements extraction** (agents create `ComplianceRequirement`
