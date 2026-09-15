@@ -14,7 +14,7 @@ government bids, RFPs/RFQs and post-award work execution; the data model already
 ```bash
 cp .env.example .env            # add ANTHROPIC_API_KEY, or leave blank for offline MOCK mode
 pip install -r requirements.txt
-python -m scripts.seed          # 15 realistic fake opportunities run through the pipeline
+python -m scripts.seed          # 15 fake opportunities through the pipeline (spends tokens with a real key)
 uvicorn app.main:app --reload   # http://localhost:8000
 ```
 
@@ -23,8 +23,10 @@ Or with Docker:
 ```bash
 cp .env.example .env
 docker compose up --build       # http://localhost:8000
-docker compose exec opportunity-engine python -m scripts.seed
+docker compose exec opportunity-engine python -m scripts.seed      # optional demo data
 ```
+
+Remove the demo data later with `python -m scripts.seed --purge` (or delete `data/opportunity_engine.db`).
 
 Tests:
 
