@@ -4,15 +4,19 @@
 <h1>Opportunities</h1>
 <form method="get" class="actions">
   <select name="status" style="width:220px"><option value="">All (excluding rejected)</option><option value="active" {{ 'selected' if status == 'active' }}>Active</option><option value="rejected" {{ 'selected' if status == 'rejected' }}>Rejected & declined</option>{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if status == s }}>{{ s }} ({{ counts.get(s, 0) }})</option>{% endfor %}</select>
+  <select name="category" style="width:200px"><option value="">All categories</option>{% for key, label in categories %}<option value="{{ key }}" {{ 'selected' if category == key }}>{{ label }}</option>{% endfor %}</select>
+  <input type="text" name="country" value="{{ country }}" placeholder="country (ISO-3)" style="width:130px">
   <select name="kind" style="width:140px"><option value="">All types</option><option value="freelance" {{ 'selected' if kind == 'freelance' }}>Freelance</option><option value="bid" {{ 'selected' if kind == 'bid' }}>Bids / RFPs</option></select>
   <input type="text" name="q" value="{{ q }}" placeholder="search" style="width:240px"><button class="btn">Filter</button>
 </form>
 <div class="card"><table>
-<tr><th>Title</th><th>Source</th><th>Status</th><th class="num">Budget</th><th class="num">Score</th><th class="num">Profit</th><th class="num">Your hrs</th><th class="num">$/hr</th><th>Reason / summary</th><th>Updated</th></tr>
+<tr><th>Title</th><th>Source</th><th>Region</th><th>Category</th><th>Status</th><th class="num">Value (USD)</th><th class="num">Score</th><th class="num">Profit</th><th class="num">{{ mode.effort_label }}</th><th class="num">$/hr</th><th>Reason / summary</th><th>Updated</th></tr>
 {% for o in rows %}{% set a = o.analysis %}
-<tr><td><a href="/opportunities/{{ o.id }}">{{ o.title }}</a>{% if o.is_bid %} <span class="pill info">BID</span>{% endif %}<br><small>{{ o.buyer_name or '' }}{% if o.deadline %} · due {{ o.deadline|dt }}{% endif %}</small></td><td>{{ o.source }}</td><td><span class="pill {{ o.status|status_class }}">{{ o.status }}</span></td>
-<td class="num">{{ o.budget_display }}</td><td class="num {{ a.opportunity_score|score_class if a else 'muted' }}">{{ a.opportunity_score|round|int if a else '-' }}</td><td class="num">{{ a.expected_profit|money if a else '-' }}</td><td class="num">{{ a.estimated_human_hours|hours if a else '-' }}</td><td class="num">{{ a.profit_per_human_hour|money if a else '-' }}</td>
+<tr><td><a href="/opportunities/{{ o.id }}">{{ o.title }}</a>{% if o.is_bid %} <span class="pill info">BID</span>{% endif %}<br><small>{{ o.buyer_name or '' }}{% if o.deadline %} · due {{ o.deadline|dt }}{% endif %}</small></td><td>{{ o.source }}</td><td>{{ o.country or '-' }}</td>
+<td><small>{% if o.legal_tech_category %}<span class="pill info">{{ o.legal_tech_category }}</span>{% elif o.is_legal_tech is false %}<span class="muted">not legal-tech</span>{% endif %}</small></td>
+<td><span class="pill {{ o.status|status_class }}">{{ o.status }}</span></td>
+<td class="num">{{ o.value_usd|money if o.value_usd else o.budget_display }}</td><td class="num {{ a.opportunity_score|score_class if a else 'muted' }}">{{ a.opportunity_score|round|int if a else '-' }}</td><td class="num">{{ a.expected_profit|money if a else '-' }}</td><td class="num">{{ a.estimated_human_hours|hours if a else '-' }}</td><td class="num">{{ a.profit_per_human_hour|money if a else '-' }}</td>
 <td><small>{% if o.rejection_reasons %}{{ o.rejection_reasons|join('; ') }}{% elif a %}{{ a.summary }}{% endif %}</small></td><td><small>{{ o.updated_at|dt }}</small></td></tr>
-{% else %}<tr><td colspan="10" class="muted">Nothing here.</td></tr>{% endfor %}
+{% else %}<tr><td colspan="12" class="muted">Nothing here.</td></tr>{% endfor %}
 </table></div>
 {% endblock %}

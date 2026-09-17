@@ -39,6 +39,8 @@ class ManualOpportunityIn(BaseModel):
     deliverables: list[str] = []
     deadline: str | None = None
     opportunity_type: str = "freelance"
+    country: str | None = None
+    cpv_codes: list[str] = []
     agency: str | None = None
     solicitation_number: str | None = None
     set_aside: str | None = None
@@ -63,6 +65,9 @@ def _opp_json(opp: Opportunity) -> dict[str, Any]:
     return {
         "id": opp.id, "source": opp.source, "external_id": opp.external_id, "title": opp.title,
         "opportunity_type": opp.opportunity_type, "agency": opp.agency, "set_aside": opp.set_aside,
+        "country": opp.country, "value_usd": opp.value_usd, "cpv_codes": opp.cpv_codes,
+        "is_legal_tech": opp.is_legal_tech, "legal_tech_category": opp.legal_tech_category,
+        "legal_tech_relevance": opp.legal_tech_relevance,
         "deadline": opp.deadline, "bid_documents": [{"id": d.id, "name": d.name, "status": d.status} for d in opp.bid_documents],
         "attachments": [{"id": a.id, "filename": a.filename, "status": a.status, "method": a.method, "chars": a.text_chars,
                          "error": a.error} for a in opp.attachments],

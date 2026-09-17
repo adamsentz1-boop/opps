@@ -4,8 +4,11 @@
 <h1>Settings</h1>
 <div class="grid g2">
 <form method="post" action="/settings">
-{% for group in ['thresholds', 'pricing', 'notifications', 'owner'] %}
+{% for group in ['offering', 'thresholds', 'pricing', 'notifications', 'owner'] %}
 <h2>{{ group }}</h2><div class="card">
+{% if group == 'offering' %}<p class="muted">Set <code>profile_mode</code> to <code>vendor</code> when bidding a product into RFPs, and
+<code>legal_tech_only</code> to <code>true</code> to hunt legal-technology tenders worldwide. Everything an agent may claim about the
+product must be written into <code>product_profile</code> by the team - placeholders are never treated as facts.</p>{% endif %}
 {% for s in specs if s.group == group %}
 <label>{{ s.key }} <small>— {{ s.description }}</small></label>
 {% if s.value_type == 'text' %}<textarea name="{{ s.key }}" rows="6">{{ values[s.key] }}</textarea>{% else %}<input type="text" name="{{ s.key }}" value="{{ values[s.key] }}">{% endif %}

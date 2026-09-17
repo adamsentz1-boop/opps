@@ -32,10 +32,13 @@ router = APIRouter()
 
 
 def _ctx(request: Request, db: Session, **extra) -> dict:
+    from app.profiles import get_mode
+    from app.settings_service import get_setting
     unread = db.query(func.count(Notification.id)).filter(Notification.read.is_(False)).scalar() or 0
     awaiting = db.query(func.count(Opportunity.id)).filter(Opportunity.status == S.AWAITING_APPROVAL.value).scalar() or 0
     settings = get_settings()
-    base = {"request": request, "unread": unread, "awaiting_count": awaiting,
+    mode = get_mode(get_setting(db, "profile_mode"))
+    base = {"request": request, "unread": unread, "awaiting_count": awaiting, "mode": mode,
             "llm_mode": settings.claude_model if settings.llm_enabled else "MOCK",
             "flash": request.query_params.get("msg"), "error": request.query_params.get("err")}
     base.update(extra)
@@ -182,10 +185,15 @@ def verify_requirement(requirement_id: str, evidence: str = Form(...), notes: st
 
 # --------------------------------------------------------------------------- opportunities
 @router.get("/opportunities", response_class=HTMLResponse)
-def opportunities(request: Request, status: str = "", q: str = "", kind: str = "", db: Session = Depends(get_db)):
+def opportunities(request: Request, status: str = "", q: str = "", kind: str = "", category: str = "",
+                  country: str = "", db: Session = Depends(get_db)):
     query = db.query(Opportunity).outerjoin(OpportunityAnalysis)
     if kind in ("bid", "freelance"):
         query = query.filter(Opportunity.opportunity_type == kind)
+    if category:
+        query = query.filter(Opportunity.legal_tech_category == category)
+    if country:
+        query = query.filter(Opportunity.country == country.strip().upper())
     if status == "rejected":
         query = query.filter(Opportunity.status.in_([S.REJECTED.value, S.DECLINED.value]))
     elif status == "active":
@@ -200,8 +208,11 @@ def opportunities(request: Request, status: str = "", q: str = "", kind: str = "
         query = query.filter((Opportunity.title.ilike(like)) | (Opportunity.description.ilike(like)))
     rows = query.order_by(Opportunity.updated_at.desc()).limit(300).all()
     counts = dict(db.query(Opportunity.status, func.count(Opportunity.id)).group_by(Opportunity.status).all())
-    return templates.TemplateResponse(request, "opportunities.html", _ctx(request, db, rows=rows, status=status, q=q, kind=kind,
-                                                                 counts=counts, statuses=[s.value for s in S]))
+    from app.taxonomy import category_choices
+    return templates.TemplateResponse(request, "opportunities.html",
+                                      _ctx(request, db, rows=rows, status=status, q=q, kind=kind, category=category,
+                                           country=country, categories=category_choices(),
+                                           counts=counts, statuses=[s.value for s in S]))
 
 
 @router.get("/opportunities/{opportunity_id}", response_class=HTMLResponse)

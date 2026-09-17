@@ -56,4 +56,45 @@ class PrivateRFPFeedSource(_StubSource):
     )
 
 
-STUB_SOURCES: list[type[_StubSource]] = [UpworkSource, PennsylvaniaProcurementSource, PrivateRFPFeedSource]
+class CanadaBuysSource(_StubSource):
+    source_name = "canadabuys"
+    display_name = "CanadaBuys (Government of Canada tenders)"
+    _requirements = (
+        "CanadaBuys publishes open tender notices as daily CSV/XML downloads and an OCDS feed on open.canada.ca. "
+        "Enable by pointing GenericJSONSource at the permitted export, or implement an adapter against the "
+        "documented open-data endpoint. Bidding requires a Procurement Business Number (PBN)."
+    )
+
+
+class AusTenderSource(_StubSource):
+    source_name = "austender"
+    display_name = "AusTender (Australian Government)"
+    _requirements = (
+        "AusTender publishes ATM (approach to market) notices as public RSS/XML feeds and downloadable datasets. "
+        "Enable via RSS_FEED_URLS with the ATM feed, or implement an adapter against the documented dataset. "
+        "Bidding requires an ABN and, for many agencies, a panel arrangement."
+    )
+
+
+class UNGMSource(_StubSource):
+    source_name = "ungm"
+    display_name = "UNGM / UN agencies"
+    _requirements = (
+        "The UN Global Marketplace publishes tender notices publicly; programmatic access requires a registered "
+        "vendor account and, for some agencies, a subscription. Register the entity first, then implement an "
+        "adapter against the account's permitted export. Do not scrape."
+    )
+
+
+class WorldBankSource(_StubSource):
+    source_name = "world_bank"
+    display_name = "World Bank / development bank procurement"
+    _requirements = (
+        "The World Bank Projects & Operations API and the procurement notices dataset are public. Implement an "
+        "adapter against the documented API, or use GenericJSONSource. Bidding follows the borrower country's "
+        "process, not the Bank's."
+    )
+
+
+STUB_SOURCES: list[type[_StubSource]] = [UpworkSource, PennsylvaniaProcurementSource, PrivateRFPFeedSource,
+                                         CanadaBuysSource, AusTenderSource, UNGMSource, WorldBankSource]

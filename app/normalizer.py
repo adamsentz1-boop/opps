@@ -110,6 +110,9 @@ def normalize(source: str, payload: dict[str, Any], field_map: dict[str, str] | 
         naics_code=clean_text(pick("naics_code", default=None), 16) or None,
         estimated_value=_to_float(pick("estimated_value", default=None)),
         place_of_performance=clean_text(pick("place_of_performance", default=None), 255) or None,
+        country=clean_text(pick("country", default=None), 8) or None,
+        language=clean_text(pick("language", default=None), 8) or None,
+        cpv_codes=_as_list(pick("cpv_codes", default=None)),
     )
 
 
@@ -122,6 +125,32 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
+def enrich_opportunity(db: Session, opp: Opportunity) -> Opportunity:
+    """Local enrichment, no tokens: normalise the value to USD and classify legal-technology relevance."""
+    from app.fx import load_rates, to_usd
+    from app.settings_service import get_setting
+    from app.taxonomy import classify
+
+    rates = load_rates(get_setting(db, "fx_rates"))
+    amount = opp.budget_max if opp.budget_max is not None else (
+        opp.budget_min if opp.budget_min is not None else opp.estimated_value)
+    if opp.budget_type == "hourly":
+        opp.value_usd = None  # an hourly rate is not a deal size
+    else:
+        opp.value_usd = to_usd(amount, opp.currency, rates)
+
+    cpv_setting = str(get_setting(db, "legal_tech_cpv_codes") or "")
+    cpv_codes = [c.strip() for c in cpv_setting.split(",") if c.strip()] or None
+    result = classify(opp.title, opp.description, codes=list(opp.cpv_codes or []),
+                      buyer_name=opp.buyer_name or "", extra_text=opp.raw_text or "", cpv_codes=cpv_codes)
+    opp.is_legal_tech = result.is_legal_tech
+    opp.legal_tech_category = result.category
+    opp.legal_tech_relevance = result.relevance
+    opp.classification_notes = result.reasons
+    db.flush()
+    return opp
+
+
 def upsert_opportunity(db: Session, item: NormalizedOpportunity) -> tuple[Opportunity, bool]:
     """Insert a normalised opportunity, or return the existing one. Returns (opportunity, created)."""
     existing = db.query(Opportunity).filter_by(source=item.source, external_id=item.external_id).one_or_none()
@@ -132,6 +161,7 @@ def upsert_opportunity(db: Session, item: NormalizedOpportunity) -> tuple[Opport
                       status=OpportunityStatus.NEW.value, injection_flags=flags)
     db.add(opp)
     db.flush()
+    enrich_opportunity(db, opp)
     log_event(db, agent="ScoutAgent", action="opportunity.discovered", object_type="opportunity", object_id=opp.id,
               new_state=opp.status, details={"source": opp.source, "title": opp.title, "injection_flags": flags})
     urls = item.raw_payload.get("attachment_urls") or []

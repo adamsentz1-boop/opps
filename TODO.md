@@ -46,6 +46,23 @@
 - [x] Forward-only SQLite column migration so existing databases upgrade in place
 - [x] Deadlines widget, bid filter, bid fields on the manual intake form
 
+## Worldwide legal-tech sourcing - done
+- [x] Profile modes (`solo` / `vendor`) with mode-specific prompt addenda, thresholds and dashboard labels
+- [x] Legal-technology classifier: 13 categories, legal-buyer signals, legal-services exclusion, CPV hints
+- [x] Currency normalisation to USD via a local editable rate table
+- [x] TED (EU) adapter on the public Search API v3, with field-rejection fallback
+- [x] UK Find a Tender adapter on the public OCDS API, paginated and defensively parsed
+- [x] Region gating (`target_regions` / `excluded_regions`) and USD deal-value floor
+- [x] Verified product profile that agents may never fill in; stubs for CanadaBuys, AusTender, UNGM, World Bank
+- [x] `scripts/seed_legaltech.py` vendor-mode demo
+
+## Worldwide legal-tech sourcing - next
+- [ ] Run TED and Find a Tender against the live APIs and tune the CPV/keyword sets from real hit rates
+- [ ] Non-English notices: TED returns many languages; decide translate-then-classify vs per-language keywords
+- [ ] Framework/DPS awareness (a call-off is a different economic shape from a new award)
+- [ ] Incumbent detection from prior award notices on the same buyer + CPV
+- [ ] CanadaBuys and AusTender adapters against their official open-data exports
+
 ## Phase 2 - next
 - [x] Attachment ingestion for solicitations through the existing local Stirling PDF service (text layer first,
       OCR only for scanned PDFs, sequential, graceful when the container is stopped, SAM.gov resource links queued)

@@ -25,6 +25,9 @@
 | `GenericRSSSource` | enabled via `RSS_FEED_URLS` | RSS 2.0 + Atom, stdlib parser |
 | `GenericJSONSource` | enabled via `JSON_FEED_URLS` | URL or file, optional field map |
 | `UpworkSource` | stub | needs approved official API/OAuth app; no scraping |
+| `TEDSource` | enabled via `TED_ENABLED` | EU TED Search API v3, public and keyless; CPV + keyword + country queries, multilingual value flattening, automatic retry with a minimal field list if TED rejects the requested fields |
+| `FindATenderSource` | enabled via `FTS_ENABLED` | UK Find a Tender OCDS release packages, public and keyless, paginated, defensive OCDS parsing |
+| `CanadaBuysSource`, `AusTenderSource`, `UNGMSource`, `WorldBankSource` | stubs | each documents the official access required |
 | `SamGovSource` | enabled via `SAM_GOV_API_KEY` | official public API; NAICS/keyword queries, description fetch, de-dupe by noticeId |
 | `PennsylvaniaProcurementSource` | stub | no API; permitted feed/export or manual only |
 | `PrivateRFPFeedSource` | stub | subscriber RSS/JSON under aggregator terms |
@@ -49,6 +52,19 @@ renders extracted text as `<untrusted_opportunity_data>` blocks for `BaseAgent.o
 flags found in attachments are merged into the opportunity's flags before scoring. `process_pending()` runs
 `ingest_pending()` first, wrapped so that ingestion can never stop the scheduler.
 
+### Profile modes (`app/profiles.py`)
+`solo` frames the shared Opportunity/Analysis schema as an independent consultant's delivery hours; `vendor`
+frames the same fields as product fit and internal bid effort for an organisation answering RFPs. The mode
+selects a prompt addendum (`app/prompts/_profile_solo.md` / `_profile_vendor.md`) appended to the shared
+guardrails, changes which threshold settings apply, and relabels the dashboard. One pipeline, one audit trail.
+
+### Legal-technology classification (`app/taxonomy.py`) and currency (`app/fx.py`)
+`classify()` scores a notice against thirteen legal-tech category keyword families, legal-buyer signals, and
+classification codes, and separates legal *services* from legal *technology*. It runs at insert time in
+`enrich_opportunity()` - locally, before any Claude call - so a worldwide feed can be filtered without token
+spend. `fx.to_usd()` normalises deal values through an editable local rate table (`fx_rates`); unknown
+currencies return `None` and are reported rather than guessed.
+
 ### Pipeline (`app/pipeline/runner.py`)
 `process_opportunity(db, id)`:
 1. `pre_rules` (no tokens): physical/onsite, licensed, ToS/deceptive, full-time, low budget, ≥3 injection
@@ -66,7 +82,10 @@ flags found in attachments are merged into the opportunity's flags before scorin
 6. `ProposalAgent` → `Proposal` v1 (for bids: the executive summary).
 7. `AWAITING_APPROVAL`; notification if score ≥ `notify_min_score`.
 
-`pre_rules` also rejects any opportunity whose response deadline has already passed, and uses
+In vendor mode `pre_rules` additionally rejects non-legal-tech notices (when `legal_tech_only`), countries in
+`excluded_regions` or outside `target_regions`, and deal values below `minimum_deal_value` after USD
+conversion; `post_rules` measures effort against `maximum_bid_effort_hours`. `pre_rules` also rejects any
+opportunity whose response deadline has already passed, and uses
 `estimated_value` as the budget for bids that state no budget.
 
 Errors set `ERROR` with `last_error`; `reanalyze_opportunity` re-runs and increments proposal versions.

@@ -180,9 +180,12 @@ def process_opportunity(db: Session, opportunity_id: str) -> str:
             reasons.append("Solution architect: not feasible remotely with verified capabilities")
         if not s.profitable:
             reasons.append("Solution architect: not profitable at achievable price")
-        if s.estimated_human_hours > thresholds.maximum_human_hours:
-            reasons.append(f"Solution architect estimates {s.estimated_human_hours:.1f} owner hours "
-                           f"(> {thresholds.maximum_human_hours:.0f})")
+        max_hours = (float(thresholds.maximum_bid_effort_hours)
+                     if str(getattr(thresholds, "profile_mode", "solo")).lower() == "vendor"
+                     else float(thresholds.maximum_human_hours))
+        if s.estimated_human_hours > max_hours:
+            reasons.append(f"Solution architect estimates {s.estimated_human_hours:.1f} internal hours "
+                           f"(> {max_hours:.0f})")
         if reasons:
             reject(db, opp, reasons, "solution", "SolutionArchitectAgent")
             return "rejected"

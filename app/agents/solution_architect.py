@@ -22,7 +22,7 @@ class SolutionArchitectAgent(BaseAgent):
                     "recommended_price": analysis.recommended_price,
                     "expected_profit": analysis.expected_profit, "red_flags": analysis.red_flags}
         content = "\n".join([
-            self.trusted_block("Verified owner profile", get_setting(db, "owner_profile")),
+            self.profile_block(db),
             self.trusted_block("Qualification summary", qual),
             self.opportunity_block(opp),
             "\nDesign the solution and return SolutionOutput JSON.",

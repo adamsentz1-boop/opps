@@ -5,6 +5,10 @@ the work**, scores them on **expected profit per human hour**, drafts the propos
 **approval queue**. Nothing is ever submitted, sent, signed, purchased, or promised without an explicit human
 decision recorded in the dashboard.
 
+It runs in two profile modes. **Solo** hunts freelance/contract work for an independent consultant.
+**Vendor** hunts public tenders and RFPs worldwide for an organisation selling a product - the mode used for
+legal-technology RFP discovery.
+
 Phase 1 covers freelance/contract listings from manual entry, RSS/Atom feeds and JSON feeds.
 Phase 2 adds formal bids: a SAM.gov adapter (official API), bid-package drafting with per-document owner
 sign-off, compliance requirements you verify yourself, and post-award execution where agents draft
@@ -51,6 +55,55 @@ what are we proposing, and should I approve it. Buttons: **APPROVE**, **REJECT**
 Approving creates an immutable `approvals` row and moves the opportunity to `READY_TO_SUBMIT`. You submit it
 yourself in Phase 1 (copy button / Markdown export on the opportunity page) and then record the outcome (submitted → interviewing → won/lost). Marking an opportunity
 WON creates a `WorkOrder` with an agent-generated plan, task list, QA checklist and approval checkpoints.
+
+## Worldwide legal-technology RFP discovery (vendor mode)
+
+Switch the engine from "solo consultant" to "product vendor" in Settings:
+
+```
+profile_mode      = vendor         # scores product fit and bid effort instead of personal delivery hours
+legal_tech_only   = true           # reject anything the local classifier does not consider legal technology
+organization_name = <your entity>
+product_profile   = <verified capabilities - see below>
+target_regions    = worldwide      # or USA,GBR,IRL,DEU,...
+excluded_regions  = <countries you will never bid in>
+minimum_deal_value = 25000         # USD, after currency conversion
+maximum_bid_effort_hours = 60
+```
+
+**Sources.** `TEDSource` (EU Tenders Electronic Daily) and `FindATenderSource` (UK) use public, keyless official
+APIs; `SamGovSource` covers US federal. Enable with `TED_ENABLED=true` / `FTS_ENABLED=true`. Canada, Australia,
+UN and World Bank ship as documented stubs explaining what official access each needs. Nothing is scraped.
+
+**Legal-tech classifier** (`app/taxonomy.py`). Worldwide tender feeds are enormous, so every notice is
+classified locally - no tokens - into one of thirteen categories (contract analytics, CLM, eDiscovery, document
+review, legal research, matter management, court/case management, IP, regtech, records/FOI, privacy, legal AI).
+Tenders for legal *services* (law-firm panels, legal advice) are separated from legal *technology*. Only
+plausible matches reach Claude, which is what keeps the API bill proportionate to a global search.
+
+**Currency.** Deal values are normalised to USD through a local, editable rate table (`fx_rates` in Settings)
+so a EUR tender and a SGD tender are compared on one scale. There is no live FX call: the rates are
+approximate by design and only need to answer "is this big enough to bid on".
+
+**Verified product profile.** In vendor mode the `product_profile` setting is the only source of claims about
+the company - capabilities, certifications, data residency, references, insurance, track record. It ships as a
+template full of `[TEAM: ...]` placeholders. **Agents never fill those in.** Anything absent is reported as a
+gap and an owner action, never invented.
+
+Demo it offline:
+
+```bash
+python -m scripts.seed_legaltech      # worldwide legal-tech tenders + deliberate noise, mock mode
+```
+
+```
+[recommended]  82   $669,600 IRL contract_analytics  Contract analytics and clause extraction platform
+[recommended]  80 $1,143,000 GBR ediscovery          eDiscovery and document review platform (framework)
+[rejected   ]   -   $324,000 IRL -                   Office furniture ......... Not a legal-technology opportunity
+[rejected   ]   - $5,080,000 GBR -                   Panel of law firms ....... Not a legal-technology opportunity
+[rejected   ]   -    $11,430 GBR contract_analytics  Contract review pilot .... Deal value below minimum $25,000
+[rejected   ]   -   $800,000 RUS clm                 CLM platform ............. Country RUS is in excluded_regions
+```
 
 ## PDF ingestion (RFP attachments) via your existing Stirling PDF
 
@@ -127,9 +180,10 @@ Sources ──► Normalizer ──► Rule rejection ──► QualificationAge
    ProposalAgent ──► AWAITING_APPROVAL ──► notification ──► YOU ──► READY_TO_SUBMIT
 ```
 
-* **Sources** (`app/sources/`): `ManualSource`, `GenericRSSSource`, `GenericJSONSource`, `SamGovSource`
-  (official API), plus documented stubs for Upwork, Pennsylvania procurement and private RFP feeds. No
-  scraping: stubs explain what official access is required.
+* **Sources** (`app/sources/`): `ManualSource`, `GenericRSSSource`, `GenericJSONSource`, `SamGovSource`,
+  `TEDSource` (EU), `FindATenderSource` (UK) - all official APIs - plus documented stubs for Upwork, PA
+  procurement, private RFP feeds, CanadaBuys, AusTender, UNGM and the World Bank. No scraping: stubs explain
+  what official access is required.
 * **Agents** (`app/agents/`, prompts in `app/prompts/*.md`, editable live): Scout, Qualification, Research,
   SolutionArchitect, Requirements, Bid, Proposal, Work, QA. All use Claude structured outputs (`messages.parse`) and every call is
   recorded in `agent_runs` with tokens, cost and the raw JSON.
@@ -180,7 +234,9 @@ app/
   schemas.py         NormalizedOpportunity + structured agent outputs
   sanitize.py        untrusted-content handling
   normalizer.py      payload -> NormalizedOpportunity -> DB
-  sources/           adapters (manual, rss, json, sam_gov, stubs, registry)
+  taxonomy.py        legal-tech classification (local, no tokens)   fx.py  currency -> USD
+  profiles.py        solo vs vendor profile modes
+  sources/           adapters (manual, rss, json, sam_gov, ted, find_a_tender, stubs, registry)
   agents/            agent roles      prompts/  editable system prompts
   llm/               Claude client + mock
   pipeline/          rejection, scoring, runner

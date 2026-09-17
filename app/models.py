@@ -64,6 +64,15 @@ class Opportunity(TimestampMixin, Base):
     naics_code: Mapped[str | None] = mapped_column(String(16))
     estimated_value: Mapped[float | None] = mapped_column(Float)
     place_of_performance: Mapped[str | None] = mapped_column(String(255))
+    # Worldwide / legal-technology classification (computed locally, no tokens)
+    country: Mapped[str | None] = mapped_column(String(8), index=True)
+    language: Mapped[str | None] = mapped_column(String(8))
+    cpv_codes: Mapped[list] = mapped_column(JSON, default=list)
+    value_usd: Mapped[float | None] = mapped_column(Float, index=True)
+    is_legal_tech: Mapped[bool | None] = mapped_column(Boolean, index=True)
+    legal_tech_category: Mapped[str | None] = mapped_column(String(64), index=True)
+    legal_tech_relevance: Mapped[int] = mapped_column(Integer, default=0)
+    classification_notes: Mapped[list] = mapped_column(JSON, default=list)
     rejection_reasons: Mapped[list] = mapped_column(JSON, default=list)
     rejection_stage: Mapped[str | None] = mapped_column(String(32))  # rules | thresholds | solution | owner
     injection_flags: Mapped[list] = mapped_column(JSON, default=list)
@@ -93,6 +102,11 @@ class Opportunity(TimestampMixin, Base):
     @property
     def is_bid(self) -> bool:
         return self.opportunity_type == "bid"
+
+    @property
+    def best_value_usd(self) -> float | None:
+        """Comparable deal size in USD, whatever currency the notice used."""
+        return self.value_usd
 
     @property
     def current_proposal(self) -> "Proposal | None":

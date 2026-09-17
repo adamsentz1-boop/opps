@@ -16,8 +16,11 @@ class ProposalAgent(BaseAgent):
     def run(self, db: Session, opp: Opportunity, owner_notes: str = "") -> ProposalOutput:
         settings = get_settings()
         analysis, plan, buyer = opp.analysis, opp.solution_plan, opp.buyer
-        owner = {"name": settings.owner_name or "(not provided - sign off without a name)",
-                 "title": settings.owner_title, "verified_profile": get_setting(db, "owner_profile")}
+        mode = self.mode(db)
+        signer = {"mode": mode.key,
+                  "name": settings.owner_name or get_setting(db, "organization_name")
+                  or "(not provided - sign off without a name)",
+                  "title": settings.owner_title if mode.key == "solo" else "(vendor bid)"}
         pricing = {}
         if analysis:
             pricing = {"recommended_price": analysis.recommended_price, "budget_type": opp.budget_type,
@@ -33,7 +36,8 @@ class ProposalAgent(BaseAgent):
             research = {"company": buyer.company, "industry": buyer.industry, "personalization": buyer.personalization,
                         "uncertain_items": buyer.uncertain_items, "project_motivation": buyer.project_motivation}
         parts = [
-            self.trusted_block("VERIFIED OWNER PROFILE (only source of claims about the owner)", owner),
+            self.profile_block(db),
+            self.trusted_block("Signature / sender", signer),
             self.trusted_block("Pricing & effort", pricing),
             self.trusted_block("Solution plan", plan_dict),
             self.trusted_block("Buyer research (inferences are marked uncertain)", research),

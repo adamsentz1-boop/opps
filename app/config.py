@@ -47,6 +47,19 @@ class Settings(BaseSettings):
     pdf_max_text_chars: int = 60000        # cap on extracted text passed to agents per attachment
     pdf_download_allowed_hosts: str = "sam.gov,api.sam.gov,beta.sam.gov"  # auto-download only from these hosts
 
+    # TED - EU Tenders Electronic Daily (public, keyless Search API v3)
+    ted_enabled: bool = False
+    ted_cpv_codes: str = ""        # blank -> taxonomy defaults
+    ted_keywords: str = ""         # blank -> taxonomy defaults
+    ted_countries: str = ""        # ISO-3 buyer countries, blank = all
+    ted_days_back: int = 7
+    ted_max_results: int = 100
+
+    # UK Find a Tender Service (public, keyless OCDS API)
+    fts_enabled: bool = False
+    fts_days_back: int = 7
+    fts_max_results: int = 100
+
     # SAM.gov (official public API; requires a free api.data.gov key)
     sam_gov_api_key: str = ""
     sam_gov_naics: str = ""            # comma-separated NAICS codes, e.g. 541511,541512,541519,518210
@@ -75,6 +88,22 @@ class Settings(BaseSettings):
     @property
     def json_feeds(self) -> list[str]:
         return [u.strip() for u in self.json_feed_urls.split(",") if u.strip()]
+
+    @property
+    def ted_cpv_list(self) -> list[str]:
+        from app.taxonomy import DEFAULT_CPV_CODES
+        codes = [c.strip() for c in self.ted_cpv_codes.split(",") if c.strip()]
+        return codes or DEFAULT_CPV_CODES
+
+    @property
+    def ted_keyword_list(self) -> list[str]:
+        from app.taxonomy import DEFAULT_KEYWORD_QUERIES
+        kws = [k.strip() for k in self.ted_keywords.split(",") if k.strip()]
+        return kws or DEFAULT_KEYWORD_QUERIES
+
+    @property
+    def ted_country_list(self) -> list[str]:
+        return [c.strip().upper() for c in self.ted_countries.split(",") if c.strip()]
 
     @property
     def pdf_allowed_hosts(self) -> list[str]:

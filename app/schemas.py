@@ -37,6 +37,9 @@ class NormalizedOpportunity(BaseModel):
     naics_code: str | None = None
     estimated_value: float | None = None
     place_of_performance: str | None = None
+    country: str | None = None
+    language: str | None = None
+    cpv_codes: list[str] = Field(default_factory=list)
 
     @field_validator("title")
     @classmethod

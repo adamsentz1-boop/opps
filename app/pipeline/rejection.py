@@ -37,9 +37,33 @@ _FULLTIME = re.compile(r"\b(full[- ]time (employee|position|role|hire)|w-?2 (onl
 _ADULT = re.compile(r"\b(adult content|onlyfans|escort|gambling site|casino affiliate)\b", re.I)
 
 
+def _region_codes(raw: str | None) -> list[str]:
+    return [c.strip().upper() for c in str(raw or "").split(",") if c.strip()]
+
+
 def pre_rules(opp: Opportunity, t: Thresholds) -> RejectionResult:
     reasons: list[str] = []
     text = f"{opp.title}\n{opp.description}\n{opp.raw_text}"
+    vendor = str(getattr(t, "profile_mode", "solo")).lower() == "vendor"
+
+    # --- worldwide sourcing gates (local, no tokens spent)
+    if getattr(t, "legal_tech_only", False) and opp.is_legal_tech is False:
+        note = (opp.classification_notes or ["no legal-technology terms found"])[0]
+        reasons.append(f"Not a legal-technology opportunity ({note})")
+
+    excluded = _region_codes(getattr(t, "excluded_regions", ""))
+    if opp.country and opp.country.upper() in excluded:
+        reasons.append(f"Country {opp.country} is in excluded_regions")
+    targets = _region_codes(getattr(t, "target_regions", "worldwide"))
+    if targets and "WORLDWIDE" not in targets and opp.country and opp.country.upper() not in targets:
+        reasons.append(f"Country {opp.country} is outside target_regions")
+
+    if vendor:
+        minimum = float(getattr(t, "minimum_deal_value", 0) or 0)
+        if opp.value_usd is not None and opp.value_usd < minimum:
+            reasons.append(f"Deal value ${opp.value_usd:,.0f} below minimum ${minimum:,.0f}")
+        if opp.currency and opp.value_usd is None and opp.estimated_value:
+            reasons.append(f"Value stated in {opp.currency}, which has no FX rate configured")
 
     if _PHYSICAL.search(text):
         reasons.append("Requires onsite / physical work")
@@ -59,6 +83,8 @@ def pre_rules(opp: Opportunity, t: Thresholds) -> RejectionResult:
     best_case = opp.budget_max if opp.budget_max is not None else opp.budget_min
     if best_case is None and opp.estimated_value is not None:
         best_case = opp.estimated_value
+    if vendor:
+        best_case = None  # vendor mode uses the USD-normalised deal value above instead
     if best_case is not None:
         if opp.budget_type == "hourly":
             if best_case < t.minimum_hourly_budget:
@@ -77,6 +103,9 @@ def pre_rules(opp: Opportunity, t: Thresholds) -> RejectionResult:
 
 def post_rules(analysis: OpportunityAnalysis, t: Thresholds) -> RejectionResult:
     reasons: list[str] = []
+    vendor = str(getattr(t, "profile_mode", "solo")).lower() == "vendor"
+    max_hours = float(getattr(t, "maximum_bid_effort_hours", 0) or 0) if vendor else float(t.maximum_human_hours)
+    effort_label = "Bid + delivery effort" if vendor else "Human hours"
     if analysis.reject_recommended:
         reasons.extend(f"Agent: {r}" for r in (analysis.reject_reasons or ["recommended rejection"]))
     if analysis.opportunity_score < t.minimum_opportunity_score:
@@ -84,8 +113,8 @@ def post_rules(analysis: OpportunityAnalysis, t: Thresholds) -> RejectionResult:
     if analysis.ai_completable_percentage < t.minimum_ai_completable_percentage:
         reasons.append(f"AI completable {analysis.ai_completable_percentage}% below minimum "
                        f"{t.minimum_ai_completable_percentage:.0f}%")
-    if analysis.estimated_human_hours > t.maximum_human_hours:
-        reasons.append(f"Human hours {analysis.estimated_human_hours:.1f} exceed maximum {t.maximum_human_hours:.0f}")
+    if analysis.estimated_human_hours > max_hours:
+        reasons.append(f"{effort_label} {analysis.estimated_human_hours:.1f}h exceeds maximum {max_hours:.0f}h")
     if analysis.expected_profit < t.minimum_expected_profit:
         reasons.append(f"Expected profit ${analysis.expected_profit:,.0f} below minimum ${t.minimum_expected_profit:,.0f}")
     if analysis.risk > t.maximum_risk_score:

@@ -17,8 +17,8 @@ class BidAgent(BaseAgent):
     def run(self, db: Session, opp: Opportunity, owner_notes: str = "") -> BidPackageOutput:
         settings = get_settings()
         a, plan = opp.analysis, opp.solution_plan
-        owner = {"name": settings.owner_name or "(not provided)", "title": settings.owner_title,
-                 "verified_profile": get_setting(db, "owner_profile")}
+        signer = {"name": settings.owner_name or get_setting(db, "organization_name") or "(not provided)",
+                  "mode": self.mode(db).key}
         pricing = {} if a is None else {
             "recommended_price": a.recommended_price, "estimated_human_hours": a.estimated_human_hours,
             "estimated_agent_hours": a.estimated_agent_hours, "estimated_api_cost": a.estimated_api_cost,
@@ -32,7 +32,8 @@ class BidAgent(BaseAgent):
         bid_meta = {"agency": opp.agency, "solicitation_number": opp.solicitation_number, "notice_type": opp.notice_type,
                     "set_aside": opp.set_aside, "naics_code": opp.naics_code, "deadline": opp.deadline,
                     "place_of_performance": opp.place_of_performance}
-        parts = [self.trusted_block("VERIFIED OWNER PROFILE (only source of claims about the owner)", owner),
+        parts = [self.profile_block(db),
+                 self.trusted_block("Signature / sender", signer),
                  self.trusted_block("Bid metadata", bid_meta),
                  self.trusted_block("Pricing inputs", pricing),
                  self.trusted_block("Solution plan", plan_dict),

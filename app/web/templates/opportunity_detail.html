@@ -3,6 +3,10 @@
 {% block content %}
 {% set a = opp.analysis %}{% set p = opp.current_proposal %}{% set plan = opp.solution_plan %}
 <h1>{{ opp.title }} <span class="pill {{ opp.status|status_class }}">{{ opp.status }}</span>{% if opp.is_bid %} <span class="pill info">BID</span>{% endif %}</h1>
+{% if opp.legal_tech_category or opp.country or opp.value_usd %}<div class="muted">
+{% if opp.country %}{{ opp.country }} · {% endif %}{% if opp.legal_tech_category %}<span class="pill info">{{ opp.legal_tech_category }}</span> relevance {{ opp.legal_tech_relevance }}/100 · {% endif %}
+{% if opp.value_usd %}value {{ opp.value_usd|money }} USD{% if opp.currency != 'USD' %} (from {{ opp.currency }}, approximate rate){% endif %}{% endif %}
+{% if opp.classification_notes %}<br><small>{{ opp.classification_notes|join(' · ') }}</small>{% endif %}</div>{% endif %}
 {% if opp.is_bid %}<div class="muted">{{ opp.agency or '' }}{% if opp.solicitation_number %} · solicitation {{ opp.solicitation_number }}{% endif %}{% if opp.notice_type %} · {{ opp.notice_type }}{% endif %}{% if opp.set_aside %} · set-aside: <strong class="warn">{{ opp.set_aside }}</strong>{% endif %}{% if opp.naics_code %} · NAICS {{ opp.naics_code }}{% endif %}{% if opp.place_of_performance %} · {{ opp.place_of_performance }}{% endif %}{% if opp.estimated_value %} · est. value {{ opp.estimated_value|money }}{% endif %}</div>{% endif %}
 <div class="muted">{{ opp.source }} · external id {{ opp.external_id }} · client: {{ opp.buyer_name or 'unknown' }} ({{ opp.buyer_type }}) · {{ opp.location or 'location n/a' }} · budget {{ opp.budget_display }} · posted {{ opp.posted_at|dt }} · deadline {{ opp.deadline|dt }}
 {% if opp.source_url %} · <a href="{{ opp.source_url }}" target="_blank" rel="noopener">open source listing ↗</a>{% endif %}</div>
@@ -42,17 +46,17 @@
   <div class="card"><div class="q">What is it?</div><p>{{ a.summary }}</p><small>{{ a.category }}</small></div>
   <div class="card"><div class="q">How much could we make?</div>
     <div class="kv"><div><div class="k">Bid</div><div class="v">{{ (p.price if p else a.recommended_price)|money }}</div></div><div><div class="k">Expected profit</div><div class="v good">{{ a.expected_profit|money }}</div></div><div><div class="k">Margin</div><div class="v">{{ (a.expected_margin*100)|round|int }}%</div></div><div><div class="k">p(win)</div><div class="v">{{ (a.estimated_probability_of_win*100)|round|int }}%</div></div><div><div class="k">Expected value</div><div class="v">{{ a.expected_value|money }}</div></div></div></div>
-  <div class="card"><div class="q">How much work will I do?</div>
-    <div class="kv"><div><div class="k">Your hours</div><div class="v">{{ a.estimated_human_hours|hours }}</div></div><div><div class="k">Agent hours</div><div class="v">{{ a.estimated_agent_hours|hours }}</div></div><div><div class="k">$ / your hour</div><div class="v good">{{ a.profit_per_human_hour|money }}</div></div><div><div class="k">AI cost</div><div class="v">${{ '%.0f'|format(a.estimated_api_cost) }}</div></div><div><div class="k">Other cost</div><div class="v">${{ '%.0f'|format(a.estimated_other_cost) }}</div></div></div>
+  <div class="card"><div class="q">{{ 'How much internal effort?' if mode.key == 'vendor' else 'How much work will I do?' }}</div>
+    <div class="kv"><div><div class="k">{{ mode.effort_label }}</div><div class="v">{{ a.estimated_human_hours|hours }}</div></div><div><div class="k">Agent hours</div><div class="v">{{ a.estimated_agent_hours|hours }}</div></div><div><div class="k">$ / {{ 'internal hour' if mode.key == 'vendor' else 'your hour' }}</div><div class="v good">{{ a.profit_per_human_hour|money }}</div></div><div><div class="k">AI cost</div><div class="v">${{ '%.0f'|format(a.estimated_api_cost) }}</div></div><div><div class="k">Other cost</div><div class="v">${{ '%.0f'|format(a.estimated_other_cost) }}</div></div></div>
     {% if plan %}<small>{{ plan.human_involvement }}</small>{% endif %}</div>
-  <div class="card"><div class="q">Can Claude actually perform it?</div>{% if plan %}<p>{{ plan.verdict }}</p><small>Feasible: {{ 'yes' if plan.feasible else 'no' }} · profitable: {{ 'yes' if plan.profitable else 'no' }} · AI does {{ a.ai_completable_percentage }}%</small>{% else %}<p class="muted">Solution plan not generated (rejected before that stage).</p>{% endif %}</div>
+  <div class="card"><div class="q">{{ 'Does the product actually meet it?' if mode.key == 'vendor' else 'Can Claude actually perform it?' }}</div>{% if plan %}<p>{{ plan.verdict }}</p><small>Feasible: {{ 'yes' if plan.feasible else 'no' }} · profitable: {{ 'yes' if plan.profitable else 'no' }} · AI does {{ a.ai_completable_percentage }}%</small>{% else %}<p class="muted">Solution plan not generated (rejected before that stage).</p>{% endif %}</div>
   <div class="card"><div class="q">What could go wrong?</div><ul class="tight">{% for r in a.red_flags %}<li>{{ r }}</li>{% endfor %}{% if plan %}{% for r in plan.risk_factors %}<li>{{ r }}</li>{% endfor %}{% for r in plan.likely_blockers %}<li class="muted">Blocker: {{ r }}</li>{% endfor %}{% endif %}{% if opp.buyer %}{% for r in opp.buyer.potential_red_flags %}<li class="warn">Buyer: {{ r }}</li>{% endfor %}{% endif %}</ul><small>Risk {{ a.risk }}/100 · competition {{ a.competition }}/100 · confidence {{ a.confidence }}/100</small></div>
   <div class="card"><div class="q">Should I approve it?</div><div class="value" style="font-size:34px;font-weight:700" ><span class="{{ a.opportunity_score|score_class }}">{{ a.opportunity_score|round|int }}</span><small>/100</small></div><p>{{ a.reasoning }}</p></div>
 </div>
 
 <h2>Scores</h2>
 <div class="card"><div class="scores">
-{% for k, v in [('technical fit', a.technical_fit), ('AI completable', a.ai_completable_percentage), ('human effort', a.human_effort), ('profitability', a.profitability), ('scope clarity', a.scope_clarity), ('buyer quality', a.buyer_quality), ('risk', a.risk), ('competition', a.competition), ('confidence', a.confidence)] %}
+{% for k, v in [(mode.fit_label, a.technical_fit), (mode.automation_label, a.ai_completable_percentage), (mode.effort_label, a.human_effort), ('profitability', a.profitability), ('scope clarity', a.scope_clarity), ('buyer quality', a.buyer_quality), ('risk', a.risk), ('competition', a.competition), ('confidence', a.confidence)] %}
 <div class="score"><div class="k">{{ k }}</div><div class="v">{{ v }}</div><div class="bar"><i style="width:{{ v }}%"></i></div></div>
 {% endfor %}
 </div></div>

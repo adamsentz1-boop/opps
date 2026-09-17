@@ -11,11 +11,11 @@
     <div><div class="k">Recommended bid</div><div class="v">{{ (opp.current_proposal.price if opp.current_proposal else a.recommended_price)|money }}</div></div>
     <div><div class="k">Score</div><div class="v {{ a.opportunity_score|score_class }}">{{ a.opportunity_score|round|int }}</div></div>
     <div><div class="k">AI completion</div><div class="v">{{ a.ai_completable_percentage }}%</div></div>
-    <div><div class="k">Your hours</div><div class="v">{{ a.estimated_human_hours|hours }}</div></div>
+    <div><div class="k">{{ mode.effort_label }}</div><div class="v">{{ a.estimated_human_hours|hours }}</div></div>
     <div><div class="k">Expected profit</div><div class="v good">{{ a.expected_profit|money }}</div></div>
     <div><div class="k">Expected value</div><div class="v">{{ a.expected_value|money }}</div></div>
     <div><div class="k">Risk</div><div class="v {{ 'bad' if a.risk > 60 else 'warn' if a.risk > 35 else 'good' }}">{{ a.risk }}</div></div>
-    <div><div class="k">$ / your hour</div><div class="v good">{{ a.profit_per_human_hour|money }}</div></div>
+    <div><div class="k">$ / hour</div><div class="v good">{{ a.profit_per_human_hour|money }}</div></div>
   </div>
   <p><strong>What is it?</strong> {{ a.summary }}</p>
   {% if opp.solution_plan %}<p><strong>Can Claude do it?</strong> {{ opp.solution_plan.verdict }}</p>{% endif %}

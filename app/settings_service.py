@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models import Setting
+from app.taxonomy import DEFAULT_CPV_CODES as _DEFAULT_CPV
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,24 @@ database transformations.
 Certifications: none verified. Insurance: none verified. Do NOT claim any certification, license,
 insurance, named customers, or specific past results."""
 
+DEFAULT_PRODUCT_PROFILE = """[TEMPLATE - the team must replace every line with verified facts before any bid text is used.]
+
+Organisation: [TEAM: legal entity name, HQ country, year founded, ownership]
+Product category: contract analytics / AI-assisted document review and data extraction
+What the product does today: [TEAM: list only shipped, demonstrable capabilities]
+Languages supported: [TEAM: list]
+Deployment options: [TEAM: SaaS region(s), private cloud, on-premises - state what actually exists]
+Integrations: [TEAM: named, shipped integrations only]
+Security & compliance posture: [TEAM: list only certifications you hold, with dates - e.g. SOC 2 Type II,
+  ISO 27001, GDPR/DPA position, data residency options. Leave blank if not held.]
+Insurance: [TEAM: types and limits actually in force, else blank]
+Reference customers usable in bids: [TEAM: only customers who have given written permission]
+Public sector track record: [TEAM: contracts actually delivered, or state 'none yet']
+Typical deal size and implementation timeline: [TEAM: from real closed deals]
+Partners / resellers for local presence: [TEAM: named partners per region, else blank]
+
+Anything not listed above does not exist for bidding purposes. Agents must never fill these placeholders in."""
+
 SETTING_SPECS: list[SettingSpec] = [
     SettingSpec("minimum_project_value", 500, "float", "Reject if the best-case budget is below this (USD)."),
     SettingSpec("minimum_opportunity_score", 75, "float", "Minimum OPPORTUNITY_SCORE (0-100) to recommend."),
@@ -45,6 +64,33 @@ SETTING_SPECS: list[SettingSpec] = [
                 "pricing"),
     SettingSpec("notify_min_score", 80, "float", "Send a NEW MONEY OPPORTUNITY notification at/above this score.",
                 "notifications"),
+    # --- offering / who is bidding
+    SettingSpec("profile_mode", "solo", "str",
+                "'solo' = independent consultant selling delivery time. 'vendor' = organisation selling a "
+                "product into RFPs and tenders (legal technology).", "offering"),
+    SettingSpec("organization_name", "", "str", "Legal entity that would bid (vendor mode).", "offering"),
+    SettingSpec("product_profile", DEFAULT_PRODUCT_PROFILE, "text",
+                "Vendor mode: the ONLY facts agents may claim about the product, company, certifications, "
+                "customers and track record. Placeholders must be replaced by the team.", "offering"),
+    SettingSpec("legal_tech_only", False, "bool",
+                "Reject anything the local classifier does not consider legal technology (recommended when "
+                "hunting legal-tech RFPs worldwide).", "offering"),
+    SettingSpec("target_regions", "worldwide", "str",
+                "Comma-separated ISO-3 country codes we can serve (e.g. USA,GBR,IRL,DEU), or 'worldwide'.",
+                "offering"),
+    SettingSpec("excluded_regions", "", "str",
+                "Comma-separated ISO-3 country codes we will never bid in (sanctions, no legal entity, "
+                "data-residency we cannot meet).", "offering"),
+    SettingSpec("minimum_deal_value", 25000, "float",
+                "Vendor mode: reject tenders whose value (converted to USD) is below this.", "offering"),
+    SettingSpec("maximum_bid_effort_hours", 60, "float",
+                "Vendor mode: reject if winning the bid would take more internal hours than this.", "offering"),
+    SettingSpec("legal_tech_cpv_codes", ",".join(_DEFAULT_CPV), "text",
+                "CPV codes treated as legal-tech relevant when portals tag notices. Tune against the official "
+                "CPV list; used for querying TED and for classification hints.", "offering"),
+    SettingSpec("fx_rates", "{}", "text",
+                "Approximate USD per 1 unit of currency, as JSON (e.g. {\"EUR\": 1.08}). Merged over built-in "
+                "defaults. Local and editable on purpose - no live FX call.", "pricing"),
     SettingSpec("owner_profile", DEFAULT_OWNER_PROFILE, "text",
                 "The ONLY facts the proposal agent may claim about you. Keep it verified and honest.", "owner"),
     SettingSpec("preferred_work", "n8n, Workato, API integrations, REST APIs, Python scripts, data processing, "

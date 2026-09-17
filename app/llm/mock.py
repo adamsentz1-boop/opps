@@ -24,6 +24,10 @@ PREFERRED = [
     "security questionnaire", "soc 2", "soc2", "google workspace", "google sheets", "microsoft", "power automate",
     "extraction", "pdf", "database", "sql", "zapier", "make.com", "airtable", "etl", "scrap", "webhook",
     "claude", "gpt", "llm", "chatbot", "openai", "anthropic",
+    # legal technology (vendor mode)
+    "contract", "contract management", "contract analytics", "clause", "ediscovery", "e-discovery",
+    "document review", "redaction", "matter management", "case management", "legal", "compliance",
+    "records management", "due diligence", "lease abstraction", "e-filing", "docket", "tender", "rfp",
 ]
 AVOID = [
     "onsite", "on-site", "on site", "in person", "in-person", "physically install", "physical", "hardware install",
