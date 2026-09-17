@@ -30,7 +30,8 @@
 - [ ] Owner "capability inventory" table (tools, accounts, verified skills) to feed proposals and requirements
 - [ ] ScoutAgent triage switch per source for noisy feeds
 - [ ] Web-fetch based buyer research (Claude web fetch tool) with domain allow-list and owner opt-in
-- [ ] email / Slack / SMS transports (ntfy is done, opt-in)
+- [x] Outbound webhook adapter for n8n (alerts out, with routable economics in the payload)
+- [ ] email / Slack / SMS transports (ntfy and webhook are done, opt-in)
 - [ ] Batch API for bulk qualification when a feed delivers many items at once
 - [ ] Per-source rate limits and fetch state (last seen id / etag)
 - [ ] Alembic migrations once the schema stabilises

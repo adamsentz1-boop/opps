@@ -157,7 +157,10 @@ Per-run cost from token usage × model price table; summaries per agent, day, mo
 order feed the dashboard's AI cost, gross profit and effective hourly rate.
 
 ### Notifications (`app/notifications/`)
-`NotificationAdapter.send()`; `DashboardAdapter` persists rows. `NtfyAdapter` POSTs the notification text to
+`NotificationAdapter.send()`; `DashboardAdapter` persists rows. `WebhookAdapter` (registered as both `webhook`
+and `n8n`) POSTs the notification as JSON to `WEBHOOK_URL` with an optional `X-Engine-Token`, carrying the
+opportunity's economics in `meta` so an n8n workflow can branch on score, profit, country or deadline without
+calling back. `NtfyAdapter` POSTs the notification text to
 `NTFY_URL/NTFY_TOPIC` only when both are set and `ntfy` is listed in `NOTIFY_ADAPTERS`. `email`, `slack`, `sms`
 are stubs that never transmit.
 

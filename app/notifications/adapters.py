@@ -66,6 +66,38 @@ class NtfyAdapter(_ExternalStub):
             return False
 
 
+class WebhookAdapter(_ExternalStub):
+    """POST each notification as JSON to an owner-configured URL.
+
+    Built for n8n: point WEBHOOK_URL at a Webhook node and n8n decides where the alert goes (phone, email,
+    Slack, a spreadsheet). Sends only when WEBHOOK_URL is set and "webhook" is listed in NOTIFY_ADAPTERS.
+    Never raises - a delivery failure is logged and the pipeline continues.
+    """
+    name = "webhook"
+    required_env = ("webhook_url",)
+
+    def send(self, db, message: NotificationMessage) -> bool:
+        if not self.configured:
+            log.info("webhook adapter not configured; skipping external send")
+            return False
+        import json
+        import urllib.request
+        settings = get_settings()
+        payload = {"title": message.title, "body": message.body, "level": message.level,
+                   "opportunity_id": message.opportunity_id, "source": "opportunity-engine", **message.meta}
+        headers = {"Content-Type": "application/json", "User-Agent": "OpportunityEngine/0.1 (+local)"}
+        if settings.webhook_token:
+            headers["X-Engine-Token"] = settings.webhook_token
+        req = urllib.request.Request(settings.webhook_url, data=json.dumps(payload).encode(),
+                                     headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 - owner-configured URL
+                return 200 <= resp.status < 300
+        except Exception as exc:  # noqa: BLE001
+            log.warning("webhook send failed: %s", exc)
+            return False
+
+
 class EmailAdapter(_ExternalStub):
     name = "email"
 
@@ -79,5 +111,6 @@ class SMSAdapter(_ExternalStub):
 
 
 ADAPTERS: dict[str, type[NotificationAdapter]] = {
-    "dashboard": DashboardAdapter, "ntfy": NtfyAdapter, "email": EmailAdapter, "slack": SlackAdapter, "sms": SMSAdapter,
+    "dashboard": DashboardAdapter, "webhook": WebhookAdapter, "n8n": WebhookAdapter, "ntfy": NtfyAdapter,
+    "email": EmailAdapter, "slack": SlackAdapter, "sms": SMSAdapter,
 }

@@ -105,6 +105,20 @@ python -m scripts.seed_legaltech      # worldwide legal-tech tenders + deliberat
 [rejected   ]   -   $800,000 RUS clm                 CLM platform ............. Country RUS is in excluded_regions
 ```
 
+## n8n at the edges
+
+n8n handles what sits either side of the engine, so the engine itself stays one job: judge the opportunity and
+draft the bid.
+
+* **Into the engine.** n8n watches whatever cannot be polled directly - inboxes, portal alert emails, RSS - and
+  POSTs each notice to `POST /api/opportunities` (JSON: title, description, buyer, values, deadline, plus the
+  bid fields). Set `"process": false` to queue it for the next scan instead of analysing it immediately. Adding
+  a source becomes a workflow rather than a code change.
+* **Out of the engine.** With `webhook` in `NOTIFY_ADAPTERS`, every alert is POSTed to `WEBHOOK_URL` as JSON.
+  n8n routes it - phone, Slack, email, a spreadsheet row - and can branch on the numbers in the payload.
+
+Both directions are owner-configured and off by default. The engine never reaches outward on its own.
+
 ## PDF ingestion (RFP attachments) via your existing Stirling PDF
 
 Solicitation PDFs, statements of work and amendments are processed **locally** by the Stirling PDF container
@@ -199,8 +213,11 @@ Sources ──► Normalizer ──► Rule rejection ──► QualificationAge
   was required, and the approval id.
 * **Settings** (`/settings`): thresholds, pricing targets, the verified owner profile and preferred/avoided work,
   editable without code changes.
-* **Notifications**: dashboard adapter enabled by default. ntfy push works when you opt in
-  (`NOTIFY_ADAPTERS=dashboard,ntfy` plus `NTFY_URL`/`NTFY_TOPIC`); email/Slack/SMS are stubs that never send.
+* **Notifications**: dashboard adapter enabled by default. Add `webhook` to `NOTIFY_ADAPTERS` and set
+  `WEBHOOK_URL` to POST each alert as JSON to an n8n Webhook node, which then decides where it goes (phone,
+  Slack, email). The payload carries the routable numbers: score, expected profit, recommended bid, human
+  hours, country, category, deadline and source link. `WEBHOOK_TOKEN` is sent as `X-Engine-Token` so n8n can
+  reject anything else. ntfy push works the same way; email/Slack/SMS remain non-sending stubs.
 
 ## Security model
 

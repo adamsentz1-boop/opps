@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     notify_adapters: str = "dashboard"
     ntfy_url: str = ""
     ntfy_topic: str = ""
+    # Generic outbound webhook - point it at an n8n Webhook node to fan alerts out to phone/email/Slack.
+    webhook_url: str = ""
+    webhook_token: str = ""
 
     owner_name: str = ""
     owner_title: str = "Independent automation & integration consultant"

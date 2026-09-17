@@ -38,8 +38,14 @@ def notify_new_opportunity(db: Session, opp: Opportunity) -> list[str]:
             f"Expected profit: ${a.expected_profit:,.0f}\n"
             f"Opportunity score: {a.opportunity_score:.0f}\n"
             f"Awaiting approval.")
+    meta = {"score": a.opportunity_score, "expected_profit": a.expected_profit,
+            "recommended_bid": (proposal.price if proposal else a.recommended_price),
+            "human_hours": a.estimated_human_hours, "ai_completable_percentage": a.ai_completable_percentage,
+            "country": opp.country, "category": opp.legal_tech_category, "value_usd": opp.value_usd,
+            "deadline": opp.deadline.isoformat() if opp.deadline else None,
+            "source": opp.source, "source_url": opp.source_url, "title": opp.title}
     return notify(db, NotificationMessage(title="NEW MONEY OPPORTUNITY", body=body, level="opportunity",
-                                          opportunity_id=opp.id))
+                                          opportunity_id=opp.id, meta=meta))
 
 
 def notify_system(db: Session, title: str, body: str, opportunity_id: str | None = None, level: str = "info"):
