@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Opportunity Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  @page { size: letter; margin: 14mm 15mm 12mm; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing: border-box; }
+
+  :root {
+    --ink:#121C1A; --muted:#55645F; --line:#D5DFDB; --rule:#B9C8C3;
+    --seal:#0E5C4D; --seal-soft:#E8F2EE;
+    --pass:#1B7A5C; --stop:#8F2A2C;
+    --display:'Archivo','Helvetica Neue',Arial,sans-serif;
+    --body:'Source Sans 3','Segoe UI',system-ui,sans-serif;
+    --mono:'JetBrains Mono',Consolas,monospace;
+  }
+  body { margin:0; color:var(--ink); background:#fff; font-family:var(--body);
+         font-size:10.3pt; line-height:1.5; }
+
+  header { border-bottom:1.5px solid var(--seal); padding-bottom:9px; margin-bottom:15px; }
+  .eyebrow { font-family:var(--mono); font-size:7.5pt; letter-spacing:.15em; text-transform:uppercase;
+             color:var(--seal); }
+  h1 { font-family:var(--display); font-weight:700; font-size:25pt; line-height:1; letter-spacing:-.025em;
+       margin:5px 0 7px; }
+  .standfirst { margin:0; font-size:11pt; color:var(--muted); max-width:60em; }
+  .standfirst strong { color:var(--ink); font-weight:600; }
+
+  h2 { font-family:var(--display); font-weight:600; font-size:12.5pt; letter-spacing:-.01em;
+       margin:0 0 5px; }
+  section { margin-bottom:15px; break-inside:avoid; }
+  p { margin:0 0 8px; }
+  p:last-child { margin-bottom:0; }
+
+  .mono { font-family:var(--mono); }
+
+  figure { margin:10px 0 8px; break-inside:avoid; }
+  figure svg { display:block; width:100%; height:auto; }
+  figcaption { font-size:8.8pt; color:var(--muted); margin-top:5px; }
+
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .panel { border:1px solid var(--line); border-radius:6px; padding:10px 13px; break-inside:avoid; }
+  .panel.may { border-top:2.5px solid var(--pass); }
+  .panel.no  { border-top:2.5px solid var(--stop); }
+  .panel h3 { font-family:var(--mono); font-size:8pt; letter-spacing:.09em; text-transform:uppercase;
+              margin:0 0 6px; font-weight:600; }
+  .panel.may h3 { color:var(--pass); }
+  .panel.no h3 { color:var(--stop); }
+  .panel ul { margin:0; padding-left:15px; font-size:9.6pt; line-height:1.42; }
+  .panel li { margin-bottom:2px; }
+
+  .funnel { font-family:var(--mono); font-size:9.4pt; background:var(--seal-soft); border-radius:6px;
+            padding:8px 12px; margin:8px 0; }
+  .funnel .end { color:var(--seal); font-weight:600; }
+
+  .status { display:grid; grid-template-columns:auto 1fr; gap:4px 13px; font-size:9.8pt; }
+  .status dt { font-family:var(--mono); font-size:8pt; letter-spacing:.07em; color:var(--muted); padding-top:2px; }
+  .status dd { margin:0; }
+
+  footer { border-top:1px solid var(--line); margin-top:16px; padding-top:7px;
+           font-size:8.5pt; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Internal briefing</div>
+  <h1>Opportunity Engine</h1>
+  <p class="standfirst">A system that watches public tender portals worldwide and surfaces the few
+  legal-technology RFPs we could realistically win. It runs on a home server, it drafts the bid, and
+  <strong>it never submits anything</strong> — a person approves every document before it leaves the building.</p>
+</header>
+
+<section>
+  <h2>What it does</h2>
+  <p>Governments and public bodies publish tens of thousands of tender notices a week. A few each month are
+  legal-technology buys worth our time. Finding them by hand is the bottleneck, and putting an AI on every
+  notice would be expensive for exactly that reason.</p>
+  <p>So the engine reads the feeds continuously, discards almost everything itself, and researches only what
+  survives. What reaches us is a short ranked list — each entry with a score, an honest estimate of what bidding
+  would cost us, and a draft response already written.</p>
+</section>
+
+<section>
+  <h2>How it is wired</h2>
+  <figure>
+    <svg viewBox="0 0 940 348" role="img" aria-label="Diagram: tender portals and inboxes are watched by n8n on a home Lenovo server, which posts notices into the Opportunity Engine. The engine sends PDFs to a Stirling PDF container on the same machine, keeps all documents on local disk, sends only extracted text to the Claude API, and sends alerts back through n8n which routes them to phone, Slack and email.">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#3d4a47"></path>
+        </marker>
+        <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#0E5C4D"></path>
+        </marker>
+      </defs>
+
+      <!-- home boundary -->
+      <rect x="176" y="24" width="536" height="300" rx="10" fill="#FBFDFC" stroke="#0E5C4D" stroke-width="2"></rect>
+      <text x="192" y="45" font-family="JetBrains Mono, monospace" font-size="11" fill="#0E5C4D">LENOVO · HOME SERVER · DOCKER</text>
+
+      <!-- inside boxes -->
+      <g font-family="Archivo, sans-serif" font-size="14" fill="#121C1A" text-anchor="middle">
+        <rect x="196" y="66" width="140" height="60" rx="6" fill="#fff" stroke="#8FA39D"></rect>
+        <text x="266" y="92" font-weight="600">n8n</text>
+        <text x="266" y="110" font-size="11" fill="#55645F">intake + alerts</text>
+
+        <rect x="404" y="66" width="288" height="60" rx="6" fill="#fff" stroke="#8FA39D"></rect>
+        <text x="548" y="92" font-weight="600">Opportunity Engine</text>
+        <text x="548" y="110" font-size="11" fill="#55645F">filters · scores · drafts the bid</text>
+
+        <rect x="404" y="158" width="288" height="52" rx="6" fill="#fff" stroke="#8FA39D"></rect>
+        <text x="548" y="180">Stirling PDF</text>
+        <text x="548" y="197" font-size="11" fill="#55645F">OCR, on this machine</text>
+
+        <rect x="196" y="248" width="496" height="50" rx="6" fill="#fff" stroke="#B9C8C3" stroke-dasharray="5 4"></rect>
+        <text x="444" y="270" font-size="12.5">Notices · attachments · drafts · audit log</text>
+        <text x="444" y="288" font-size="11" fill="#55645F">stay on this disk</text>
+      </g>
+
+      <!-- outside boxes -->
+      <g font-family="Archivo, sans-serif" font-size="14" fill="#121C1A" text-anchor="middle">
+        <rect x="6" y="66" width="132" height="60" rx="6" fill="#fff" stroke="#8FA39D"></rect>
+        <text x="72" y="92">Portals</text>
+        <text x="72" y="110" font-size="11" fill="#55645F">TED · UK · SAM · email</text>
+
+        <rect x="756" y="66" width="178" height="60" rx="6" fill="#fff" stroke="#8FA39D"></rect>
+        <text x="845" y="92">Claude API</text>
+        <text x="845" y="110" font-size="11" fill="#55645F">when a call is needed</text>
+
+        <rect x="6" y="248" width="132" height="50" rx="6" fill="#fff" stroke="#8FA39D"></rect>
+        <text x="72" y="270" font-size="12.5">Phone · Slack</text>
+        <text x="72" y="288" font-size="11" fill="#55645F">email</text>
+      </g>
+
+      <!-- flows -->
+      <g stroke="#3d4a47" stroke-width="1.4" fill="none">
+        <line x1="140" y1="96" x2="190" y2="96" marker-end="url(#ar)"></line>
+        <line x1="340" y1="84" x2="398" y2="84" marker-end="url(#ar)"></line>
+        <line x1="398" y1="110" x2="340" y2="110" marker-end="url(#ar)"></line>
+        <line x1="548" y1="126" x2="548" y2="154" marker-end="url(#ar)"></line>
+        <polyline points="266,126 266,228 72,228 72,244" marker-end="url(#ar)"></polyline>
+      </g>
+      <line x1="694" y1="96" x2="750" y2="96" stroke="#0E5C4D" stroke-width="1.8" marker-end="url(#ag)"></line>
+
+      <g font-family="JetBrains Mono, monospace" font-size="10" fill="#55645F">
+        <text x="165" y="88" text-anchor="middle">watches</text>
+        <text x="369" y="76" text-anchor="middle">notices in</text>
+        <text x="369" y="124" text-anchor="middle">alerts out</text>
+        <text x="560" y="146" text-anchor="start">PDFs · OCR</text>
+        <text x="170" y="220" text-anchor="middle">routes to</text>
+      </g>
+      <text x="722" y="88" font-family="JetBrains Mono, monospace" font-size="10" fill="#0E5C4D" text-anchor="middle">text only</text>
+    </svg>
+    <figcaption>Everything inside the green boundary is our own hardware. Only extracted text crosses it.</figcaption>
+  </figure>
+
+  <p><strong>The home server.</strong> It all runs in Docker on a Lenovo box that is already switched on, next to
+  the other services on it. That buys three things. Confidentiality: solicitation documents and our draft
+  responses sit on our own disk, not in someone else's SaaS — PDFs are opened and OCR'd by the Stirling container
+  on the same machine, never sent to an outside conversion service. Cost: the only running expense is the API
+  calls the engine chooses to make. Resilience: the PDF container is heavy and gets switched off sometimes, so
+  the engine treats it as optional — attachments queue, the dashboard says why, everything else keeps running.</p>
+
+  <p><strong>n8n does the edges.</strong> On the way in, it watches the sources we can't poll directly — inboxes,
+  alert emails, RSS from portals — and posts each notice into the engine's API, so adding a new source is a
+  workflow rather than a code change. On the way out, the engine hands every alert to n8n, which decides where it
+  goes: phone, Slack, email. The engine stays a single job — judge the opportunity and draft the bid — and n8n
+  handles everything around it.</p>
+</section>
+
+<section>
+  <h2>Why it stays cheap</h2>
+  <p>Two filters, not one. The first is free and runs locally: is this legal technology at all, is it in a region
+  we serve, is the deal big enough? Most of the volume dies there at no cost. Only survivors are read by Claude,
+  which scores product fit, estimates what bidding would take, and writes the draft. Every rejection keeps its
+  reason, so we can see what the filter is discarding and tune it.</p>
+  <p class="funnel">Test run: 10 notices arrived → 5 dropped for free → 5 analysed → 2 scored too low →
+  <span class="end">3 waiting for us</span></p>
+  <p>The five dropped without cost were office furniture, a law-firm advisory panel, an undersized pilot, a
+  country we don't bid in, and a job needing people on site. Half the volume never reached the API.</p>
+</section>
+
+<section>
+  <h2>The line it does not cross</h2>
+  <div class="cols">
+    <div class="panel may">
+      <h3>It may, on its own</h3>
+      <ul>
+        <li>Read public notices and attachments</li>
+        <li>Classify, score and reject opportunities</li>
+        <li>Research the buyer from the notice</li>
+        <li>Estimate effort, cost and win odds</li>
+        <li>Draft bids, proposals and deliverables</li>
+        <li>Keep the books and the audit trail</li>
+      </ul>
+    </div>
+    <div class="panel no">
+      <h3>It may never, on its own</h3>
+      <ul>
+        <li>Submit a bid or send any message</li>
+        <li>Agree pricing or accept a contract</li>
+        <li>Spend money or buy anything</li>
+        <li>Sign or certify anything</li>
+        <li>Claim something about us we haven't verified</li>
+        <li>Deliver work to a client</li>
+      </ul>
+    </div>
+  </div>
+  <p style="margin-top:9px;">That right-hand column is not a polite instruction the AI is asked to follow.
+  Approval is a separate part of the system with no route into it from the AI side, and every decision writes a
+  permanent record of what was approved. The same applies to what we claim: there is one profile of our
+  capabilities, certifications and references, it currently ships blank, and the agents are forbidden from
+  filling it in — so a tender demanding a certification we haven't recorded comes back flagged as a gap rather
+  than quietly asserted.</p>
+</section>
+
+<section>
+  <h2>Where it stands</h2>
+  <dl class="status">
+    <dt>WORKING</dt><dd>The whole pipeline, approval queue, bid drafting, worldwide classification, currency
+      conversion, local PDF handling, audit log and cost tracking.</dd>
+    <dt>NEEDS US</dt><dd>Fill in the capability profile. Switch on the EU and UK feeds. Watch what the filter
+      rejects for a week and tune it.</dd>
+    <dt>NEXT</dt><dd>Notices in other languages, framework and call-off contracts, spotting incumbents from past
+      awards, Canada and Australia.</dd>
+  </dl>
+</section>
+
+<footer>
+  Runs locally on the home server. Figures above come from seeded example tenders in offline mode, not from live
+  portal data.
+</footer>
+
+</body>
+</html>
