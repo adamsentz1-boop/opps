@@ -65,9 +65,9 @@ Sources ──► Normalizer ──► Rule rejection ──► QualificationAge
    ProposalAgent ──► AWAITING_APPROVAL ──► notification ──► YOU ──► READY_TO_SUBMIT
 ```
 
-* **Sources** (`app/sources/`): `ManualSource`, `GenericRSSSource`, `GenericJSONSource`, plus documented stubs
-  for Upwork, SAM.gov, Pennsylvania procurement and private RFP feeds. No scraping: stubs explain what
-  official access is required.
+* **Sources** (`app/sources/`): `ManualSource`, `GenericRSSSource`, `GenericJSONSource`, a real `SamGovSource`
+  against the official public API, plus documented stubs for Upwork, Pennsylvania procurement and private RFP
+  feeds. No scraping: stubs explain what official access is required.
 * **Agents** (`app/agents/`, prompts in `app/prompts/*.md`, editable live): Scout, Qualification, Research,
   SolutionArchitect, Requirements, Proposal, Work, QA. All use Claude structured outputs (`messages.parse`) and every call is
   recorded in `agent_runs` with tokens, cost and the raw JSON.
@@ -85,6 +85,34 @@ Sources ──► Normalizer ──► Rule rejection ──► QualificationAge
   editable without code changes.
 * **Notifications**: dashboard adapter enabled by default. ntfy push works when you opt in
   (`NOTIFY_ADAPTERS=dashboard,ntfy` plus `NTFY_URL`/`NTFY_TOPIC`); email/Slack/SMS are stubs that never send.
+
+## Contract-AI RFP intake
+
+Procurement feeds are a firehose, so RFP sources are scored against a contract-analytics taxonomy and the
+off-domain notices are dropped **before** they reach the database and before a single token is spent.
+
+* **What counts as relevant** (`app/sources/rfp.py`): contract abstraction, clause and obligation extraction,
+  lease abstraction, due-diligence document review, e-discovery, repapering and remediation score highest;
+  document-AI plumbing (NLP, OCR, classification, extraction, redaction) scores next; legal-department context
+  scores lowest. Bare "contract" is deliberately not a term, because every procurement notice contains it.
+  Exclusion terms (janitorial, staffing, construction, food service) zero the score outright.
+* **Tuning**: `RFP_MIN_RELEVANCE` sets the bar, `RFP_EXTRA_TERMS` adds your own vocabulary as core terms, and
+  `RFP_FILTER_ENABLED=false` turns it off. Every kept opportunity stores its score and matched terms, and each
+  source run logs how many notices were dropped, so the filter is auditable rather than a black box.
+* **SAM.gov** (`app/sources/sam_gov.py`) is a working adapter against
+  [the official public API](https://open.gsa.gov/api/get-opportunities-public-api/). Set `SAM_GOV_API_KEY` to a
+  free api.data.gov key; without one the source is skipped and the sources page explains what is needed. One
+  query is issued per configured NAICS code, and results pass through the relevance filter because a NAICS
+  search alone returns far too much unrelated work. Submitting a bid still requires a SAM.gov entity
+  registration (UEI), which surfaces as a `ComplianceRequirement` and blocks approval until you verify it.
+* **Paid aggregators** (RFPMart, BidNet, FindRFP and similar) plug in through `RFP_RSS_FEED_URLS` or
+  `RFP_JSON_FEED_URLS` using your subscriber feed, under the aggregator's terms. These are kept separate from
+  `RSS_FEED_URLS`/`JSON_FEED_URLS` so the filter only applies to RFP intake.
+
+One thing to tune before you trust the results: the default thresholds (`minimum_opportunity_score` 75,
+`maximum_human_hours` 10, `minimum_expected_profit` 400) were set for small freelance gigs. A six-figure RFP
+will routinely exceed the hours ceiling and get auto-rejected at the threshold stage. Raise
+`maximum_human_hours` and revisit `minimum_opportunity_score` in `/settings` when you start ingesting RFPs.
 
 ## Market Challenge
 

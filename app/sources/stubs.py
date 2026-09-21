@@ -35,19 +35,6 @@ class UpworkSource(_StubSource):
         return f"https://www.upwork.com/jobs/{external_id}"
 
 
-class SamGovSource(_StubSource):
-    source_name = "sam_gov"
-    display_name = "SAM.gov (federal contract opportunities)"
-    _requirements = (
-        "Official public API: https://open.gsa.gov/api/get-opportunities-public-api/ . Requires a free api.data.gov "
-        "key (SAM_GOV_API_KEY) and an entity registration (UEI) before bidding. Phase 2: map notices to "
-        "ComplianceRequirement rows (set-asides, NAICS, representations, insurance)."
-    )
-
-    def source_url(self, external_id: str) -> str | None:
-        return f"https://sam.gov/opp/{external_id}/view"
-
-
 class PennsylvaniaProcurementSource(_StubSource):
     source_name = "pa_procurement"
     display_name = "Pennsylvania eMarketplace / PA Supplier Portal"
@@ -62,9 +49,12 @@ class PrivateRFPFeedSource(_StubSource):
     source_name = "private_rfp"
     display_name = "Private RFP feeds (RFPMart, BidNet, FindRFP, etc.)"
     _requirements = (
-        "Paid RFP aggregators provide email/RSS/API access to subscribers. Enable with subscriber RSS URL "
-        "(RSS_FEED_URLS) or JSON export (JSON_FEED_URLS) under the aggregator's terms; do not scrape."
+        "Paid RFP aggregators provide email/RSS/API access to subscribers. Enable with your subscriber RSS URL in "
+        "RFP_RSS_FEED_URLS or a JSON export in RFP_JSON_FEED_URLS under the aggregator's terms; do not scrape. "
+        "Those feeds are passed through the contract-AI relevance filter (app/sources/rfp.py) before anything is "
+        "stored, so off-domain notices never reach the database."
     )
 
 
-STUB_SOURCES: list[type[_StubSource]] = [UpworkSource, SamGovSource, PennsylvaniaProcurementSource, PrivateRFPFeedSource]
+# SAM.gov graduated to a real adapter (app/sources/sam_gov.py) against the official public API.
+STUB_SOURCES: list[type[_StubSource]] = [UpworkSource, PennsylvaniaProcurementSource, PrivateRFPFeedSource]

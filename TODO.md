@@ -37,6 +37,27 @@
       duplicate-proposal prevention, expiry, edit/reanalyze/cancel
 - [x] Offline test coverage for balances, limits, approvals, fills, P&L, goal progress, HOLD, mock scan
 
+## Done (contract-AI RFP intake)
+- [x] Contract-AI relevance taxonomy + deterministic scorer (`app/sources/rfp.py`), auditable via stored
+      score/matched terms and the source run log
+- [x] `ContractAIRelevanceFilter` source wrapper: transparent to de-duplication, drops off-domain notices
+      before they reach the database
+- [x] `SamGovSource` promoted from stub to a working adapter against the official public API (one query per
+      NAICS code, optional description fetch, API key scrubbed from every error)
+- [x] Separate `RFP_RSS_FEED_URLS` / `RFP_JSON_FEED_URLS` so the filter applies only to RFP intake
+- [x] Negation-aware licensed-professional rule, so "the contractor shall not provide legal advice" no longer
+      auto-rejects contract-analytics RFPs
+- [x] 27 offline tests covering scoring, filtering, SAM.gov mapping, key redaction and registry wiring
+
+## Next (contract-AI RFP intake)
+- [ ] Verify the SAM.gov adapter against the live API (parameter names, pagination beyond the first page,
+      rate limits) - it is written to the documented shape but has not made a real call
+- [ ] Pagination past `SAM_GOV_LIMIT` notices per NAICS code
+- [ ] Field-map support for RFP JSON feeds whose keys do not match the normaliser's fallbacks
+- [ ] A separate threshold profile for RFPs (the freelance thresholds reject six-figure solicitations)
+- [ ] Attachment handling: most solicitations put the real scope in linked documents, not the notice body
+- [ ] Tune the taxonomy against real aggregator output and measure precision/recall on a labelled sample
+
 ## Next (Market Challenge)
 - [ ] Price history / sparkline on the dashboard from `market_snapshots`
 - [ ] Optional news/fundamentals inputs for MarketResearchAgent (owner-supplied only; still never fetched by agents)
