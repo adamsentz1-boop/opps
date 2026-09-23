@@ -177,6 +177,17 @@ def api_scan(background: BackgroundTasks, wait: bool = True):
     return {"queued": True}
 
 
+@router.get("/performance", dependencies=[Depends(_enabled)])
+def performance(db: Session = Depends(get_db)):
+    from app.market.performance import (confidence_calibration, performance_summary, proposal_scorecard,
+                                        round_trips)
+    challenge = ledger.get_or_create_challenge(db)
+    return {"summary": performance_summary(db, challenge),
+            "confidence_calibration": confidence_calibration(db, challenge),
+            "proposal_scorecard": proposal_scorecard(db, challenge),
+            "round_trips": [t.as_dict() for t in round_trips(db, challenge)]}
+
+
 @router.get("/watchlist", dependencies=[Depends(_enabled)])
 def watchlist(db: Session = Depends(get_db)):
     return [{"ticker": w.ticker, "enabled": w.enabled, "notes": w.notes, "created_at": w.created_at}

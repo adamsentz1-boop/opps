@@ -20,6 +20,7 @@ class PortfolioAgent(BaseAgent):
 
     def run(self, db: Session, *, state: dict[str, Any], limits: dict[str, float], research: list[dict[str, Any]],
             prices: dict[str, float], active_proposals: list[dict[str, Any]] | None = None,
+            track_record: dict[str, Any] | None = None,
             force_hold: bool = False) -> PortfolioDecisionOutput:
         research_with_prices = [dict(r, price=prices.get(r.get("ticker", ""), 0.0)) for r in research]
         content = "\n".join([
@@ -30,6 +31,8 @@ class PortfolioAgent(BaseAgent):
                 "stocks and ordinary ETFs only", "fractional shares allowed"])),
             self.trusted_block("Active proposals already awaiting the owner (do not duplicate)", active_proposals or []),
             self.trusted_block("MarketResearchAgent outputs (one per candidate, with current price)", research_with_prices),
+        ] + ([self.trusted_block("Realised track record of this system's past proposals", track_record)]
+             if track_record else []) + [
             "\nDecide BUY, SELL or HOLD for the owner to review. Return PortfolioDecisionOutput JSON.",
         ])
         ctx = {"cash": state.get("cash"), "portfolio_value": state.get("portfolio_value"),

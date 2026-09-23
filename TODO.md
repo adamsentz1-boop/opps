@@ -70,11 +70,23 @@
 - [x] `db.ensure_columns()`: additive SQLite column upgrades so existing databases survive new columns
 - [x] 33 offline tests covering statistics, levels, sizing, exits, the fill hand-off and the schema upgrade
 
+## Done (Market Challenge performance feedback)
+- [x] `app/market/performance.py`: round trips reconstructed first-in-first-out from recorded fills, carrying
+      holding period, R multiple and the confidence stated on the entry proposal; P&L reconciles with the ledger
+- [x] Win rate, profit factor, expectancy, average R and exit-reason breakdown, with small samples flagged
+      rather than presented as findings
+- [x] Confidence calibration table: is a 90+ call actually better than a 55 call?
+- [x] Counterfactual scorecard prices every idea including rejected and expired ones, separating idea quality
+      from decision quality
+- [x] `/market/performance` page, `/api/market/performance`, nav entry
+- [x] Track record fed back to the PortfolioAgent once the sample is meaningful, with explicit prompt rules
+      against sizing up on a good run or chasing a bad one
+- [x] 18 offline tests (126 total) including ledger reconciliation and first-in-first-out lot matching
+
 ## Next (Market Challenge)
 - [ ] Trailing stops: raise the stop as a position moves in your favour, instead of a fixed level
-- [ ] Proposal outcome tracking: score past proposals against what actually happened, so the hit rate and the
-      average win/loss are visible and the prompts can be tuned against evidence rather than vibes
 - [ ] Backtest the entry and exit rules over historical data before risking more capital
+- [ ] Drawdown tracking and a circuit breaker: pause proposals after N consecutive losses or an X% drawdown
 - [ ] Correlation check: several positions in one sector is one position wearing a disguise
 - [ ] Price history / sparkline on the dashboard from `market_snapshots`
 - [ ] Optional news/fundamentals inputs for MarketResearchAgent (owner-supplied only; still never fetched by agents)

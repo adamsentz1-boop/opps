@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Performance · Market Challenge{% endblock %}
+{% block content %}
+{% set m = summary %}
+<h1>Performance</h1>
+<p class="disclaimer">Measured from recorded fills and stored prices, not from the agents' own confidence. Past results describe the past only.</p>
+
+{% if not m.trades %}
+<div class="card muted">No closed trades yet. Metrics appear once you have recorded both a buy and a sell.
+Ideas the agents proposed are still priced below, including the ones you turned down.</div>
+{% else %}
+{% if not m.enough_data %}
+<div class="notice" style="border-color:var(--warn)"><strong class="warn">Small sample.</strong>
+{{ m.trades }} closed trade{{ '' if m.trades == 1 else 's' }}. Below {{ m.min_trades_for_signal }} these numbers are noise, not a finding. Read them as a record of what happened, not as evidence that the approach works.</div>
+{% endif %}
+
+<div class="hero market">
+  <div class="item big"><div class="k">Realised P&amp;L</div><div class="v {{ m.realized_pnl|pnl_class }}">{{ m.realized_pnl|signed_money }}</div></div>
+  <div class="item"><div class="k">Closed trades</div><div class="v">{{ m.trades }}</div><small>{{ m.wins }}W / {{ m.losses }}L</small></div>
+  <div class="item"><div class="k">Win rate</div><div class="v">{{ '%.0f'|format(m.win_rate_pct or 0) }}%</div></div>
+  <div class="item"><div class="k">Average R</div><div class="v {{ (m.avg_r or 0)|pnl_class }}">{% if m.avg_r is not none %}{{ '%+.2f'|format(m.avg_r) }}R{% else %}-{% endif %}</div><small>{{ m.trades_with_r }} with a stop</small></div>
+  <div class="item"><div class="k">Profit factor</div><div class="v">{% if m.profit_factor is not none %}{{ '%.2f'|format(m.profit_factor) }}{% else %}-{% endif %}</div><small>gross win / gross loss</small></div>
+  <div class="item"><div class="k">Expectancy</div><div class="v {{ (m.expectancy or 0)|pnl_class }}">{{ m.expectancy|signed_money if m.expectancy is not none else '-' }}</div><small>per trade</small></div>
+  <div class="item"><div class="k">Avg hold</div><div class="v">{{ m.avg_holding_days or 0 }}d</div></div>
+</div>
+
+<p class="disclaimer">1R is what was at stake when the position was opened, so <strong>+1.5R means the trade made one and a half times what it risked</strong>. Average R matters more than win rate: losing six times out of ten still makes money if the winners are worth twice the losers.</p>
+
+<div class="grid g2">
+<div>
+  <h2>Does confidence mean anything?</h2>
+  <div class="card">
+  <table>
+  <tr><th>Stated confidence</th><th class="num">Trades</th><th class="num">Win rate</th><th class="num">Avg R</th><th class="num">P&amp;L</th></tr>
+  {% for row in calibration %}
+  <tr><td>{{ row.band }}</td><td class="num">{{ row.trades }}</td>
+    <td class="num">{% if row.win_rate_pct is not none %}{{ '%.0f'|format(row.win_rate_pct) }}%{% else %}-{% endif %}</td>
+    <td class="num {{ (row.avg_r or 0)|pnl_class }}">{% if row.avg_r is not none %}{{ '%+.2f'|format(row.avg_r) }}R{% else %}-{% endif %}</td>
+    <td class="num {{ row.realized_pnl|pnl_class }}">{{ row.realized_pnl|signed_money }}</td></tr>
+  {% endfor %}
+  </table>
+  <small>If the high bands are not better than the low ones, the confidence score is not carrying information and should be ignored when you decide.</small>
+  </div>
+
+  <h2>How trades ended</h2>
+  <div class="card"><table>
+  <tr><th>Exit</th><th class="num">Trades</th><th class="num">P&amp;L</th></tr>
+  {% for reason, row in m.by_exit_reason.items() %}
+  <tr><td>{{ {'stop': 'Stop hit', 'target': 'Target reached', 'discretionary': 'Your own call'}.get(reason, reason) }}</td>
+    <td class="num">{{ row.trades }}</td><td class="num {{ row.realized_pnl|pnl_class }}">{{ row.realized_pnl|signed_money }}</td></tr>
+  {% else %}<tr><td colspan="3" class="muted">No closed trades.</td></tr>{% endfor %}
+  </table></div>
+</div>
+
+<div>
+  <h2>Best and worst</h2>
+  <div class="card"><table>
+  <tr><th></th><th>Ticker</th><th class="num">P&amp;L</th><th class="num">Return</th><th class="num">R</th><th class="num">Held</th></tr>
+  {% for label, t in [('Best', m.best), ('Worst', m.worst)] %}{% if t %}
+  <tr><td><strong>{{ label }}</strong></td><td>{{ t.ticker }}</td>
+    <td class="num {{ t.realized_pnl|pnl_class }}">{{ t.realized_pnl|signed_money }}</td>
+    <td class="num {{ t.return_pct|pnl_class }}">{{ '%+.1f'|format(t.return_pct) }}%</td>
+    <td class="num">{% if t.r_multiple is not none %}{{ '%+.2f'|format(t.r_multiple) }}R{% else %}-{% endif %}</td>
+    <td class="num">{{ t.holding_days }}d</td></tr>
+  {% endif %}{% endfor %}
+  </table>
+  <small>Ledger realised P&amp;L: {{ m.ledger_realized_pnl|signed_money }}. Round trips above are attributed first-in-first-out and sum to the same figure.</small>
+  </div>
+</div>
+</div>
+
+<h2>Closed trades</h2>
+<div class="card"><table>
+<tr><th>Closed</th><th>Ticker</th><th class="num">Qty</th><th class="num">Entry</th><th class="num">Exit</th><th class="num">P&amp;L</th><th class="num">Return</th><th class="num">R</th><th class="num">Held</th><th>Exit</th><th class="num">Confidence</th></tr>
+{% for t in trips %}
+<tr><td>{{ t.closed_at|dt }}</td><td><strong>{{ t.ticker }}</strong></td><td class="num">{{ t.quantity|qty }}</td>
+  <td class="num">{{ t.entry_price|money2 }}</td><td class="num">{{ t.exit_price|money2 }}</td>
+  <td class="num {{ t.realized_pnl|pnl_class }}">{{ t.realized_pnl|signed_money }}</td>
+  <td class="num {{ t.return_pct|pnl_class }}">{{ '%+.1f'|format(t.return_pct) }}%</td>
+  <td class="num {{ (t.r_multiple or 0)|pnl_class }}">{% if t.r_multiple is not none %}{{ '%+.2f'|format(t.r_multiple) }}R{% else %}-{% endif %}</td>
+  <td class="num">{{ t.holding_days }}d</td>
+  <td>{{ {'stop': 'stop', 'target': 'target', 'discretionary': 'own call'}.get(t.exit_reason, t.exit_reason) }}</td>
+  <td class="num">{% if t.confidence is not none %}{{ t.confidence }}%{% else %}-{% endif %}</td></tr>
+{% endfor %}
+</table></div>
+{% endif %}
+
+<h2>Every idea the agents had, priced today</h2>
+<p class="disclaimer">This separates the quality of the ideas from the quality of your decisions. If the ideas you turned down keep rising, you are the bottleneck. If they keep falling, you are adding value.</p>
+<div class="grid g2">
+<div><div class="card"><table>
+<tr><th>Outcome</th><th class="num">Ideas</th><th class="num">Up</th><th class="num">Down</th><th class="num">Avg change since</th></tr>
+{% for key, label in [('taken','You took it'), ('rejected','You rejected it'), ('expired','It expired'), ('cancelled','You cancelled it'), ('open','Still open')] %}
+{% set st = scorecard.stats.get(key) %}{% if st and st.count %}
+<tr><td>{{ label }}</td><td class="num">{{ st.count }}</td><td class="num good">{{ st.up }}</td><td class="num bad">{{ st.down }}</td>
+  <td class="num {{ st.avg_change_pct|pnl_class }}">{{ '%+.2f'|format(st.avg_change_pct) }}%</td></tr>
+{% endif %}{% endfor %}
+{% if scorecard.all_ideas.count %}
+<tr style="border-top:2px solid var(--border)"><td><strong>All ideas</strong></td><td class="num"><strong>{{ scorecard.all_ideas.count }}</strong></td>
+  <td class="num good">{{ scorecard.all_ideas.up }}</td><td class="num bad">{{ scorecard.all_ideas.down }}</td>
+  <td class="num {{ scorecard.all_ideas.avg_change_pct|pnl_class }}"><strong>{{ '%+.2f'|format(scorecard.all_ideas.avg_change_pct) }}%</strong></td></tr>
+{% else %}<tr><td colspan="5" class="muted">No priced proposals yet. Refresh quotes to mark them.</td></tr>{% endif %}
+</table><small>{{ scorecard.note }}</small></div></div>
+
+<div><div class="card"><table>
+<tr><th>Proposed</th><th>Ticker</th><th>Outcome</th><th class="num">Then</th><th class="num">Now</th><th class="num">Change</th></tr>
+{% for key in ['rejected', 'expired', 'cancelled', 'taken', 'open'] %}{% for r in scorecard.groups.get(key, [])[:6] %}
+<tr><td>{{ r.proposed_at|dt }}</td><td><a href="/market/proposals/{{ r.id }}">{{ r.ticker }}</a></td>
+  <td><span class="pill {{ r.status|status_class }}">{{ r.status }}</span></td>
+  <td class="num">{{ r.proposed_price|money2 }}</td><td class="num">{{ r.price_now|money2 }}</td>
+  <td class="num {{ r.change_pct|pnl_class }}">{{ '%+.2f'|format(r.change_pct) }}%</td></tr>
+{% endfor %}{% endfor %}
+</table></div></div>
+</div>
+{% endblock %}
