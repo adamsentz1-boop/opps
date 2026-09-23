@@ -30,6 +30,16 @@
     <div><div class="k">Upside / downside</div><div class="v"><span class="good">+{{ '%.0f'|format(p.expected_upside_pct) }}%</span> / <span class="bad">-{{ '%.0f'|format(p.expected_downside_pct) }}%</span></div></div>
     <div><div class="k">Horizon</div><div class="v">{{ p.time_horizon or '-' }}</div></div>
   </div>
+  {% if p.stop_price %}
+  <div class="kv" style="border-top:1px solid var(--border);padding-top:8px">
+    <div><div class="k">Stop</div><div class="v bad">{{ p.stop_price|money2 }}</div></div>
+    <div><div class="k">Target</div><div class="v good">{{ p.target_price|money2 }}</div></div>
+    <div><div class="k">Risk if stopped out</div><div class="v bad">{{ p.risk_amount|money2 }}</div></div>
+    <div><div class="k">Stop distance</div><div class="v">{{ '%.1f'|format(p.exit_plan.stop_distance_pct or 0) }}%</div></div>
+    <div><div class="k">Reward : risk</div><div class="v">{{ '%.1f'|format(p.exit_plan.reward_risk or 0) }} : 1</div></div>
+  </div>
+  <small>{{ p.exit_plan.basis }}</small>
+  {% endif %}
   <div class="why">
     <div><div class="k">Why now</div><div class="v">{{ p.reason_for_trade or '-' }}</div></div>
     <div><div class="k">Thesis</div><div class="v">{{ p.thesis or '-' }}</div></div>
@@ -60,6 +70,16 @@
 </div>
 
 <div>
+{% if p.price_stats and p.price_stats.sufficient %}
+<h2>Measured price behaviour</h2>
+<div class="card"><table>
+<tr><td>Trend</td><td><strong>{{ p.price_stats.trend }}</strong></td><td>Average daily move</td><td><strong>{{ '%.2f'|format(p.price_stats.avg_daily_move_pct or 0) }}%</strong></td></tr>
+<tr><td>Annualised volatility</td><td><strong>{{ '%.1f'|format(p.price_stats.annualised_volatility_pct or 0) }}%</strong></td><td>Return over window</td><td><strong>{{ '%+.1f'|format(p.price_stats.return_pct or 0) }}%</strong></td></tr>
+<tr><td>Drawdown from high</td><td><strong>{{ '%+.1f'|format(p.price_stats.drawdown_from_high_pct or 0) }}%</strong></td><td>Position in range</td><td><strong>{{ '%.0f'|format(p.price_stats.range_position_pct or 0) }}%</strong></td></tr>
+<tr><td>Volume trend</td><td><strong>{{ p.price_stats.volume_trend }}</strong></td><td>Days of data</td><td><strong>{{ p.price_stats.data_days }}</strong></td></tr>
+</table><small>Computed in Python from the supplied price history, not asserted by the model.</small></div>
+{% endif %}
+
 <h2>Portfolio before / after (at proposal time)</h2>
 <div class="card"><pre>{{ p.portfolio_before|tojson(indent=2) }}</pre><pre style="margin-top:8px">{{ p.portfolio_after|tojson(indent=2) }}</pre></div>
 <h2>Market snapshot used</h2>

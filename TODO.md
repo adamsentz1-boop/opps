@@ -37,7 +37,45 @@
       duplicate-proposal prevention, expiry, edit/reanalyze/cancel
 - [x] Offline test coverage for balances, limits, approvals, fills, P&L, goal progress, HOLD, mock scan
 
+## Done (contract-AI RFP intake)
+- [x] Contract-AI relevance taxonomy + deterministic scorer (`app/sources/rfp.py`), auditable via stored
+      score/matched terms and the source run log
+- [x] `ContractAIRelevanceFilter` source wrapper: transparent to de-duplication, drops off-domain notices
+      before they reach the database
+- [x] `SamGovSource` promoted from stub to a working adapter against the official public API (one query per
+      NAICS code, optional description fetch, API key scrubbed from every error)
+- [x] Separate `RFP_RSS_FEED_URLS` / `RFP_JSON_FEED_URLS` so the filter applies only to RFP intake
+- [x] Negation-aware licensed-professional rule, so "the contractor shall not provide legal advice" no longer
+      auto-rejects contract-analytics RFPs
+- [x] 27 offline tests covering scoring, filtering, SAM.gov mapping, key redaction and registry wiring
+
+## Next (contract-AI RFP intake)
+- [ ] Verify the SAM.gov adapter against the live API (parameter names, pagination beyond the first page,
+      rate limits) - it is written to the documented shape but has not made a real call
+- [ ] Pagination past `SAM_GOV_LIMIT` notices per NAICS code
+- [ ] Field-map support for RFP JSON feeds whose keys do not match the normaliser's fallbacks
+- [ ] A separate threshold profile for RFPs (the freelance thresholds reject six-figure solicitations)
+- [ ] Attachment handling: most solicitations put the real scope in linked documents, not the notice body
+- [ ] Tune the taxonomy against real aggregator output and measure precision/recall on a labelled sample
+
+## Done (Market Challenge risk management)
+- [x] `app/market/indicators.py`: trend, average daily move, volatility, drawdown, range position and volume
+      trend measured in Python and handed to the research agent as facts instead of a raw price array
+- [x] `app/market/risk.py`: volatility-derived stop and target, risk-per-share, and position sizing bounded by
+      a per-trade risk budget rather than by available cash
+- [x] Exit monitor: a breached stop or target raises a SELL proposal deterministically, with no model call
+- [x] Exit plan carried from proposal to position on fill, and cleared when the position goes flat
+- [x] Dashboard, proposal detail, fill form and JSON API surface stop, target, dollars at risk and a
+      portfolio-level "at risk to stops" figure; positions with no stop are flagged
+- [x] `db.ensure_columns()`: additive SQLite column upgrades so existing databases survive new columns
+- [x] 33 offline tests covering statistics, levels, sizing, exits, the fill hand-off and the schema upgrade
+
 ## Next (Market Challenge)
+- [ ] Trailing stops: raise the stop as a position moves in your favour, instead of a fixed level
+- [ ] Proposal outcome tracking: score past proposals against what actually happened, so the hit rate and the
+      average win/loss are visible and the prompts can be tuned against evidence rather than vibes
+- [ ] Backtest the entry and exit rules over historical data before risking more capital
+- [ ] Correlation check: several positions in one sector is one position wearing a disguise
 - [ ] Price history / sparkline on the dashboard from `market_snapshots`
 - [ ] Optional news/fundamentals inputs for MarketResearchAgent (owner-supplied only; still never fetched by agents)
 - [ ] Trailing-stop / take-profit *reminders* (proposals only, still owner-executed)

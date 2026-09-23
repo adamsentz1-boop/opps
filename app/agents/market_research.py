@@ -21,7 +21,8 @@ class MarketResearchAgent(BaseAgent):
     guardrails_name = "_market_guardrails"
 
     def run(self, db: Session, challenge: TradingChallenge, snapshot: MarketSnapshot, *, history: list[dict] | None = None,
-            owner_notes: str = "", position: dict[str, Any] | None = None, days_remaining: int = 0) -> MarketResearchOutput:
+            owner_notes: str = "", position: dict[str, Any] | None = None, days_remaining: int = 0,
+            stats: dict[str, Any] | None = None) -> MarketResearchOutput:
         quote = {"ticker": snapshot.ticker, "price": snapshot.price, "open": snapshot.open_price, "high": snapshot.high,
                  "low": snapshot.low, "previous_close": snapshot.previous_close, "change_pct": snapshot.change_pct,
                  "volume": snapshot.volume, "market_cap": snapshot.market_cap, "asset_type": snapshot.asset_type,
@@ -37,8 +38,11 @@ class MarketResearchAgent(BaseAgent):
                                              "portfolio_value": challenge.current_portfolio_value}),
             self.trusted_block("Quote (numeric market data fetched by the application)", quote),
         ]
+        if stats:
+            # Measured in Python (app/market/indicators.py), not inferred by the model from raw numbers.
+            parts.append(self.trusted_block("Measured price statistics", stats))
         if history:
-            parts.append(self.trusted_block("Recent closes (oldest first)", history))
+            parts.append(self.trusted_block("Recent closes (oldest first)", history[-30:]))
         if position:
             parts.append(self.trusted_block("Existing position in this ticker", position))
         if owner_notes:

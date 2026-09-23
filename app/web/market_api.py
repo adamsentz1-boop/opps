@@ -58,7 +58,10 @@ def _proposal_json(p: TradeProposal) -> dict[str, Any]:
             "reason_for_trade": p.reason_for_trade, "bull_case": p.bull_case, "bear_case": p.bear_case,
             "catalysts": p.catalysts, "risks": p.risks, "time_horizon": p.time_horizon, "confidence": p.confidence,
             "expected_upside_pct": p.expected_upside_pct, "expected_downside_pct": p.expected_downside_pct,
-            "risk_reward_ratio": p.risk_reward_ratio, "portfolio_before": p.portfolio_before,
+            "risk_reward_ratio": p.risk_reward_ratio,
+            "stop_price": p.stop_price, "target_price": p.target_price, "risk_amount": p.risk_amount,
+            "exit_plan": p.exit_plan or {}, "price_stats": p.price_stats or {},
+            "portfolio_before": p.portfolio_before,
             "portfolio_after": p.portfolio_after, "market_snapshot": p.market_snapshot, "created_at": p.created_at,
             "expires_at": p.expires_at, "approval_id": p.approval_id, "edited_by_owner": p.edited_by_owner}
 
@@ -80,6 +83,13 @@ def summary(db: Session = Depends(get_db)):
     state["awaiting_approval"] = db.query(TradeProposal).filter(TradeProposal.challenge_id == challenge.id,
                                                                 TradeProposal.status == TS.AWAITING_APPROVAL.value).count()
     state["brokerage_connection"] = None   # by design: the system never executes trades
+    positions = ledger.open_positions(challenge)
+    state["open_risk"] = round(sum(((p.current_price or p.average_cost) - p.stop_price) * p.quantity
+                                   for p in positions
+                                   if p.stop_price and (p.current_price or p.average_cost) > p.stop_price), 2)
+    state["positions_without_stop"] = [p.ticker for p in positions if not p.stop_price]
+    for row, position in zip(state["positions"], positions):
+        row["stop_price"], row["target_price"] = position.stop_price, position.target_price
     return state
 
 

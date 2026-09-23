@@ -35,6 +35,21 @@ class Settings(BaseSettings):
     rss_feed_urls: str = ""
     json_feed_urls: str = ""
 
+    # --- Contract-AI RFP intake (official/permitted sources only; never scraping) ---
+    rfp_rss_feed_urls: str = ""          # subscriber RSS from aggregators you pay for
+    rfp_json_feed_urls: str = ""         # JSON exports / forwarded-email inboxes
+    rfp_filter_enabled: bool = True      # drop off-domain notices before they reach the database
+    rfp_min_relevance: int = 3           # relevance score required to keep a notice
+    rfp_extra_terms: str = ""            # comma-separated extra terms scored as "core"
+
+    # SAM.gov federal contract opportunities via the official public API (free api.data.gov key)
+    sam_gov_api_key: str = ""
+    sam_gov_naics: str = "541511,541512,541519,541990,561410,518210,541199"
+    sam_gov_ptypes: str = "o,p,k,r"      # solicitation, presolicitation, combined synopsis, sources sought
+    sam_gov_posted_days: int = 7
+    sam_gov_limit: int = 100             # notices per request per NAICS code
+    sam_gov_fetch_descriptions: bool = True
+
     notify_adapters: str = "dashboard"
     ntfy_url: str = ""
     ntfy_topic: str = ""
@@ -54,6 +69,14 @@ class Settings(BaseSettings):
     market_max_position_pct: float = 60.0
     market_max_single_trade_pct: float = 60.0
     market_min_cash_reserve_pct: float = 0.0
+    # Risk management: every entry carries a stop, and size is bounded by the loss at that stop.
+    market_max_risk_per_trade_pct: float = 10.0   # % of portfolio value lost if the stop is hit
+    market_stop_move_multiple: float = 2.5        # stop sits N average daily moves below entry
+    market_min_stop_pct: float = 5.0
+    market_max_stop_pct: float = 25.0
+    market_reward_risk_target: float = 2.0        # target distance = N x stop distance
+    market_history_days: int = 60                 # price history fetched for the statistics
+    market_exit_monitor_enabled: bool = True      # propose exits when a stop or target is breached
     market_scan_enabled: bool = True
     market_scan_interval_minutes: int = 60
     market_proposal_ttl_hours: int = 72
@@ -72,6 +95,30 @@ class Settings(BaseSettings):
     @property
     def json_feeds(self) -> list[str]:
         return [u.strip() for u in self.json_feed_urls.split(",") if u.strip()]
+
+    @property
+    def rfp_rss_feeds(self) -> list[str]:
+        return [u.strip() for u in self.rfp_rss_feed_urls.split(",") if u.strip()]
+
+    @property
+    def rfp_json_feeds(self) -> list[str]:
+        return [u.strip() for u in self.rfp_json_feed_urls.split(",") if u.strip()]
+
+    @property
+    def rfp_extra_term_list(self) -> list[str]:
+        return [t.strip() for t in self.rfp_extra_terms.split(",") if t.strip()]
+
+    @property
+    def sam_gov_naics_codes(self) -> list[str]:
+        return [c.strip() for c in self.sam_gov_naics.split(",") if c.strip()]
+
+    @property
+    def sam_gov_notice_types(self) -> list[str]:
+        return [c.strip() for c in self.sam_gov_ptypes.split(",") if c.strip()]
+
+    @property
+    def sam_gov_enabled(self) -> bool:
+        return bool(self.sam_gov_api_key.strip())
 
     @property
     def notification_adapters(self) -> list[str]:

@@ -172,6 +172,16 @@ def limits(db: Session) -> dict[str, float]:
             "min_cash_reserve_pct": float(get_setting(db, "market_min_cash_reserve_pct"))}
 
 
+def risk_limits(db: Session) -> dict[str, float]:
+    """Owner-tunable risk knobs used by the deterministic sizing and exit-level maths."""
+    from app.settings_service import get_setting
+    return {"max_risk_per_trade_pct": float(get_setting(db, "market_max_risk_per_trade_pct")),
+            "stop_move_multiple": float(get_setting(db, "market_stop_move_multiple")),
+            "min_stop_pct": float(get_setting(db, "market_min_stop_pct")),
+            "max_stop_pct": float(get_setting(db, "market_max_stop_pct")),
+            "reward_risk_target": float(get_setting(db, "market_reward_risk_target"))}
+
+
 def check_trade(db: Session, challenge: TradingChallenge, side: str, ticker: str, quantity: float,
                 price: float, fees: float = 0.0) -> list[str]:
     """Deterministic rule check. Returns a list of violations (empty = OK). Used for proposals AND fills."""
@@ -279,6 +289,10 @@ def record_fill(db: Session, proposal: TradeProposal, *, quantity: float, fill_p
         if pos.quantity <= 0:
             pos.opened_at = executed_at
             pos.quantity, pos.average_cost = 0.0, 0.0
+        if proposal.stop_price or proposal.target_price:
+            # the exit plan follows the money: the position now carries the levels the owner approved
+            pos.stop_price = proposal.stop_price
+            pos.target_price = proposal.target_price
         new_qty = pos.quantity + quantity
         pos.average_cost = round((pos.quantity * pos.average_cost + quantity * fill_price + fees) / new_qty, 6)
         pos.quantity = round(new_qty, QTY_DP)
@@ -293,6 +307,7 @@ def record_fill(db: Session, proposal: TradeProposal, *, quantity: float, fill_p
         if pos.quantity <= 10 ** -QTY_DP:
             pos.quantity = 0.0
             pos.average_cost = 0.0
+            pos.stop_price = pos.target_price = None      # flat: the exit plan no longer applies
     pos.current_price = fill_price
     db.flush()
 

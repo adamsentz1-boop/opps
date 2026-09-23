@@ -36,6 +36,26 @@ _FULLTIME = re.compile(r"\b(full[- ]time (employee|position|role|hire)|w-?2 (onl
                        r"40 hours? (a|per) week|9[- ]?to[- ]?5|relocat(e|ion) required)\b", re.I)
 _ADULT = re.compile(r"\b(adult content|onlyfans|escort|gambling site|casino affiliate)\b", re.I)
 
+# "legal advice" / "legal opinion" appear in two opposite ways. A listing that WANTS legal advice is
+# disqualifying. A contract-analytics RFP almost always carries the opposite disclaimer - "the contractor
+# shall not provide legal advice" - and that must not auto-reject the notice. Only those two phrases get the
+# negation check; "licensed attorney", "bar-admitted", "PE stamp" and friends disqualify either way.
+_NEGATABLE = re.compile(r"legal (advice|opinion)", re.I)
+_NEGATION = re.compile(r"\b(no|not|non|never|without|excludes?|excluding|excluded|prohibit(ed|s)?|"
+                       r"precluded|refrain|rather than|other than|nor|neither)\b", re.I)
+_NEGATION_WINDOW = 80
+
+
+def _licensed_reason(text: str) -> str | None:
+    """Return a rejection reason if the listing genuinely requires a licensed professional."""
+    for match in _LICENSED.finditer(text):
+        if _NEGATABLE.fullmatch(match.group(0)):
+            window = text[max(0, match.start() - _NEGATION_WINDOW):match.start()]
+            if _NEGATION.search(window):
+                continue      # "...shall not provide legal advice" - a disclaimer, not a requirement
+        return "Requires a licensed professional or legal/medical advice"
+    return None
+
 
 def pre_rules(opp: Opportunity, t: Thresholds) -> RejectionResult:
     reasons: list[str] = []
@@ -43,8 +63,9 @@ def pre_rules(opp: Opportunity, t: Thresholds) -> RejectionResult:
 
     if _PHYSICAL.search(text):
         reasons.append("Requires onsite / physical work")
-    if _LICENSED.search(text):
-        reasons.append("Requires a licensed professional or legal/medical advice")
+    licensed_reason = _licensed_reason(text)
+    if licensed_reason:
+        reasons.append(licensed_reason)
     if _TOS.search(text):
         reasons.append("Likely violates platform terms or is deceptive")
     if _FULLTIME.search(text):

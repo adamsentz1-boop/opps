@@ -65,9 +65,9 @@ Sources ──► Normalizer ──► Rule rejection ──► QualificationAge
    ProposalAgent ──► AWAITING_APPROVAL ──► notification ──► YOU ──► READY_TO_SUBMIT
 ```
 
-* **Sources** (`app/sources/`): `ManualSource`, `GenericRSSSource`, `GenericJSONSource`, plus documented stubs
-  for Upwork, SAM.gov, Pennsylvania procurement and private RFP feeds. No scraping: stubs explain what
-  official access is required.
+* **Sources** (`app/sources/`): `ManualSource`, `GenericRSSSource`, `GenericJSONSource`, a real `SamGovSource`
+  against the official public API, plus documented stubs for Upwork, Pennsylvania procurement and private RFP
+  feeds. No scraping: stubs explain what official access is required.
 * **Agents** (`app/agents/`, prompts in `app/prompts/*.md`, editable live): Scout, Qualification, Research,
   SolutionArchitect, Requirements, Proposal, Work, QA. All use Claude structured outputs (`messages.parse`) and every call is
   recorded in `agent_runs` with tokens, cost and the raw JSON.
@@ -85,6 +85,34 @@ Sources ──► Normalizer ──► Rule rejection ──► QualificationAge
   editable without code changes.
 * **Notifications**: dashboard adapter enabled by default. ntfy push works when you opt in
   (`NOTIFY_ADAPTERS=dashboard,ntfy` plus `NTFY_URL`/`NTFY_TOPIC`); email/Slack/SMS are stubs that never send.
+
+## Contract-AI RFP intake
+
+Procurement feeds are a firehose, so RFP sources are scored against a contract-analytics taxonomy and the
+off-domain notices are dropped **before** they reach the database and before a single token is spent.
+
+* **What counts as relevant** (`app/sources/rfp.py`): contract abstraction, clause and obligation extraction,
+  lease abstraction, due-diligence document review, e-discovery, repapering and remediation score highest;
+  document-AI plumbing (NLP, OCR, classification, extraction, redaction) scores next; legal-department context
+  scores lowest. Bare "contract" is deliberately not a term, because every procurement notice contains it.
+  Exclusion terms (janitorial, staffing, construction, food service) zero the score outright.
+* **Tuning**: `RFP_MIN_RELEVANCE` sets the bar, `RFP_EXTRA_TERMS` adds your own vocabulary as core terms, and
+  `RFP_FILTER_ENABLED=false` turns it off. Every kept opportunity stores its score and matched terms, and each
+  source run logs how many notices were dropped, so the filter is auditable rather than a black box.
+* **SAM.gov** (`app/sources/sam_gov.py`) is a working adapter against
+  [the official public API](https://open.gsa.gov/api/get-opportunities-public-api/). Set `SAM_GOV_API_KEY` to a
+  free api.data.gov key; without one the source is skipped and the sources page explains what is needed. One
+  query is issued per configured NAICS code, and results pass through the relevance filter because a NAICS
+  search alone returns far too much unrelated work. Submitting a bid still requires a SAM.gov entity
+  registration (UEI), which surfaces as a `ComplianceRequirement` and blocks approval until you verify it.
+* **Paid aggregators** (RFPMart, BidNet, FindRFP and similar) plug in through `RFP_RSS_FEED_URLS` or
+  `RFP_JSON_FEED_URLS` using your subscriber feed, under the aggregator's terms. These are kept separate from
+  `RSS_FEED_URLS`/`JSON_FEED_URLS` so the filter only applies to RFP intake.
+
+One thing to tune before you trust the results: the default thresholds (`minimum_opportunity_score` 75,
+`maximum_human_hours` 10, `minimum_expected_profit` 400) were set for small freelance gigs. A six-figure RFP
+will routinely exceed the hours ceiling and get auto-rejected at the threshold stage. Raise
+`maximum_human_hours` and revisit `minimum_opportunity_score` in `/settings` when you start ingesting RFPs.
 
 ## Market Challenge
 
@@ -116,6 +144,15 @@ MARKET DATA (yfinance, read-only) ──► MarketResearchAgent ──► Portfo
 * Universe (V1): long-only cash account, ordinary stocks and ETFs, fractional shares; no options, futures, forex,
   crypto, leveraged/inverse products, short selling, margin, borrowing or negative cash. Every proposal and every
   fill is re-checked deterministically in Python (`app/market/portfolio.py`); agents never mutate the ledger.
+* **Every entry carries an exit plan, and size is bounded by risk.** A stop is derived from how much the
+  security actually moves day to day (`app/market/indicators.py`), then the position is sized so that being
+  stopped out costs at most `MARKET_MAX_RISK_PER_TRADE_PCT` of portfolio value (`app/market/risk.py`). A
+  volatile name therefore gets a wider stop *and* a smaller position. The model proposes the idea; the
+  arithmetic that decides how much money is exposed is done in Python and is fully tested.
+* **Open positions are watched.** When a stop or target is breached, the scan raises a SELL proposal with no
+  model call at all, because an exit is a level decided when the position was opened. Like every other
+  proposal it needs your approval and your manual execution. The dashboard shows a portfolio-level
+  "at risk to stops" figure and flags any position with no stop.
 * Approvals reuse the same immutable `approvals` table (`object_type = "market_trade"`). Approving records the
   decision and shows *"Approved — execute this trade manually with your broker, then record the fill."*
 * A scheduled scan (`MARKET_SCAN_ENABLED`, `MARKET_SCAN_INTERVAL_MINUTES`) and the **RUN MARKET SCAN** button
@@ -125,7 +162,12 @@ MARKET DATA (yfinance, read-only) ──► MarketResearchAgent ──► Portfo
   The agents are told the target is an optimisation objective, never a guarantee, and to never fabricate prices,
   news, earnings or ratings. Provider text is wrapped as untrusted data.
 
-This is a personal, experimental portfolio challenge, not investment advice.
+A stop recorded here only tells the dashboard when to propose an exit. **It does not protect the position.**
+Place the stop with your broker when you place the trade, and remember a gap can skip straight through it.
+
+This is a personal, experimental portfolio challenge, not investment advice. The target is an optimisation
+objective, never a forecast: going from $200 to $1,000 by January 2027 implies a compounding return far beyond
+what any systematic approach reliably delivers, and the software is built to say so rather than chase it.
 
 ## Security model
 
@@ -164,7 +206,8 @@ app/
   agents/            agent roles (incl. market_research, portfolio)   prompts/  editable system prompts
   llm/               Claude client + mock
   pipeline/          rejection, scoring, runner
-  market/            Market Challenge: data.py (providers), universe.py, portfolio.py (ledger), approvals.py, scan.py
+  market/            Market Challenge: data.py (providers), universe.py, indicators.py (price statistics),
+                     risk.py (exit levels + position sizing), portfolio.py (ledger), approvals.py, scan.py
   approvals.py       approval system   work_orders.py  execution lifecycle
   audit.py, costs.py, metrics.py, notifications/, scheduler.py, settings_service.py
   web/               routes, JSON API, market_routes/market_api, templates, static

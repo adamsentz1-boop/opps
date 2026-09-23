@@ -14,7 +14,9 @@
   <div class="item"><div class="k">Today</div><div class="v {{ s.today_change|pnl_class }}">{{ s.today_change|signed_money }}</div></div>
   <div class="item"><div class="k">Total return</div><div class="v {{ s.total_return_pct|pnl_class }}">{{ '%+.2f'|format(s.total_return_pct) }}%</div></div>
   <div class="item"><div class="k">Days remaining</div><div class="v">{{ s.days_remaining }}</div><small>to {{ s.target_date }}</small></div>
+  <div class="item"><div class="k">At risk to stops</div><div class="v {{ 'warn' if open_risk else 'muted' }}">{{ open_risk|money2 }}</div><small>{{ '%.1f'|format(open_risk / s.portfolio_value * 100 if s.portfolio_value else 0) }}% of portfolio</small></div>
 </div>
+{% if unprotected %}<div class="notice" style="border-color:var(--warn)"><strong class="warn">No stop set:</strong> {{ unprotected|join(', ') }}. These positions have no exit plan, so nothing will propose a sell if they fall. They predate the risk rules or the plan was cleared.</div>{% endif %}
 
 <div class="card progress-wrap">
   <div class="progress-labels"><span>{{ s.starting_cash|money2 }}</span><span>{{ s.target_value|money2 }}</span></div>
@@ -33,19 +35,23 @@
 
 <h2 id="positions">Positions</h2>
 <div class="card"><table>
-<tr><th>Ticker</th><th class="num">Shares</th><th class="num">Avg cost</th><th class="num">Current price</th><th class="num">Market value</th><th class="num">Gain / loss</th><th class="num">Weight</th><th>Quote</th></tr>
+<tr><th>Ticker</th><th class="num">Shares</th><th class="num">Avg cost</th><th class="num">Current price</th><th class="num">Market value</th><th class="num">Gain / loss</th><th class="num">Stop</th><th class="num">Target</th><th class="num">To stop</th><th class="num">Weight</th></tr>
 {% for p in positions %}{% set q = snaps.get(p.ticker) %}
 <tr><td><strong>{{ p.ticker }}</strong></td><td class="num">{{ p.quantity|qty }}</td><td class="num">{{ p.average_cost|money2 }}</td>
 <td class="num">{{ p.current_price|money2 }}{% if q and q.change_pct is not none %} <small class="{{ q.change_pct|pnl_class }}">{{ '%+.2f'|format(q.change_pct) }}%</small>{% endif %}</td>
 <td class="num">{{ p.market_value|money2 }}</td><td class="num {{ p.unrealized_pnl|pnl_class }}">{{ p.unrealized_pnl|signed_money }} ({{ '%+.1f'|format(p.unrealized_pnl_pct) }}%)</td>
-<td class="num">{{ '%.1f'|format(p.market_value / s.portfolio_value * 100 if s.portfolio_value else 0) }}%</td><td><small>{{ q.captured_at|dt if q else 'no quote yet' }}</small></td></tr>
-{% else %}<tr><td colspan="8" class="muted">No positions. Cash {{ s.cash|money2 }}.</td></tr>{% endfor %}
+<td class="num">{% if p.stop_price %}{{ p.stop_price|money2 }}{% else %}<span class="warn">none</span>{% endif %}</td>
+<td class="num">{% if p.target_price %}{{ p.target_price|money2 }}{% else %}-{% endif %}</td>
+<td class="num">{% if p.stop_price and p.current_price %}{% set to_stop = (p.current_price - p.stop_price) / p.current_price * 100 %}<span class="{{ 'bad' if to_stop < 2 else 'warn' if to_stop < 5 else 'muted' }}">{{ '%.1f'|format(to_stop) }}%</span>{% else %}-{% endif %}</td>
+<td class="num">{{ '%.1f'|format(p.market_value / s.portfolio_value * 100 if s.portfolio_value else 0) }}%</td></tr>
+{% else %}<tr><td colspan="10" class="muted">No positions. Cash {{ s.cash|money2 }}.</td></tr>{% endfor %}
 </table></div>
 
 <h2 id="awaiting">Awaiting approval <small>({{ awaiting|length }})</small></h2>
 {% for p in awaiting %}
 <div class="card trade-card {{ p.side|lower }}">
   <div class="head"><span class="side {{ p.side|lower }}">{{ p.side }} {{ p.ticker }}</span>
+    {% if p.created_by == 'ExitMonitor' %}<span class="pill warn">PLANNED EXIT · {{ p.exit_plan.signal|upper }} HIT</span>{% endif %}
     <span class="muted">proposed {{ p.created_at|dt }}{% if p.expires_at %} · expires {{ p.expires_at|dt }}{% endif %} · by {{ p.created_by }}{% if p.edited_by_owner %} · edited by you{% endif %} · <a href="/market/proposals/{{ p.id }}">details</a></span></div>
   <div class="kv">
     <div><div class="k">Proposed {{ 'investment' if p.side == 'BUY' else 'sale' }}</div><div class="v">{{ p.estimated_total|money2 }}</div></div>
@@ -57,6 +63,22 @@
     <div><div class="k">Cash after</div><div class="v">{{ p.portfolio_after.cash|money2 }}</div></div>
     <div><div class="k">Horizon</div><div class="v">{{ p.time_horizon or '-' }}</div></div>
   </div>
+  {% if p.side == 'BUY' and p.stop_price %}
+  <div class="kv" style="border-top:1px solid var(--border);padding-top:8px">
+    <div><div class="k">Stop</div><div class="v bad">{{ p.stop_price|money2 }}</div></div>
+    <div><div class="k">Target</div><div class="v good">{{ p.target_price|money2 }}</div></div>
+    <div><div class="k">Risk if stopped out</div><div class="v bad">{{ p.risk_amount|money2 }}</div></div>
+    <div><div class="k">Stop distance</div><div class="v">{{ '%.1f'|format(p.exit_plan.stop_distance_pct or 0) }}%</div></div>
+    <div><div class="k">Reward : risk</div><div class="v">{{ '%.1f'|format(p.exit_plan.reward_risk or 0) }} : 1</div></div>
+  </div>
+  <small>Stop basis: {{ p.exit_plan.basis }}. Size is capped so a stop-out costs {{ p.risk_amount|money2 }}. Enter the stop with your broker when you place the trade, or it is not real.</small>
+  {% elif p.side == 'SELL' and p.exit_plan.signal %}
+  <div class="kv" style="border-top:1px solid var(--border);padding-top:8px">
+    <div><div class="k">{{ p.exit_plan.signal|title }} level</div><div class="v">{{ p.exit_plan.level|money2 }}</div></div>
+    <div><div class="k">Average cost</div><div class="v">{{ p.exit_plan.average_cost|money2 }}</div></div>
+    <div><div class="k">Estimated P&amp;L</div><div class="v {{ p.exit_plan.estimated_realised_pnl|pnl_class }}">{{ p.exit_plan.estimated_realised_pnl|signed_money }}</div></div>
+  </div>
+  {% endif %}
   <div class="why">
     <div><div class="k">Why now</div><div class="v">{{ p.reason_for_trade or p.thesis }}</div></div>
     <div><div class="k">Upside case</div><div class="v">{{ p.bull_case or '-' }}</div></div>
@@ -78,12 +100,12 @@
 <h2 id="approved">Approved trades awaiting fill <small>({{ approved|length }})</small></h2>
 {% if approved %}<div class="notice good">Approved — execute these trades manually with your broker, then record the fill.</div>{% endif %}
 <div class="card"><table>
-<tr><th>Trade</th><th class="num">Quantity</th><th class="num">Est. price</th><th class="num">Est. total</th><th>Approved</th><th></th></tr>
+<tr><th>Trade</th><th class="num">Quantity</th><th class="num">Est. price</th><th class="num">Est. total</th><th class="num">Stop to enter</th><th>Approved</th><th></th></tr>
 {% for p in approved %}
-<tr><td><strong class="side {{ p.side|lower }}">APPROVED {{ p.side }} {{ p.ticker }}</strong> <small><a href="/market/proposals/{{ p.id }}">details</a></small></td><td class="num">{{ p.quantity|qty }}</td><td class="num">{{ p.estimated_price|money2 }}</td><td class="num">{{ p.estimated_total|money2 }}</td><td>{{ p.decided_at|dt }}</td>
+<tr><td><strong class="side {{ p.side|lower }}">APPROVED {{ p.side }} {{ p.ticker }}</strong> <small><a href="/market/proposals/{{ p.id }}">details</a></small></td><td class="num">{{ p.quantity|qty }}</td><td class="num">{{ p.estimated_price|money2 }}</td><td class="num">{{ p.estimated_total|money2 }}</td><td class="num">{% if p.stop_price %}<strong class="bad">{{ p.stop_price|money2 }}</strong>{% else %}-{% endif %}</td><td>{{ p.decided_at|dt }}</td>
 <td><div class="actions" style="margin:0"><a class="btn approve" href="/market/proposals/{{ p.id }}/fill">RECORD FILL</a>
 <form method="post" action="/market/proposals/{{ p.id }}/cancel"><button class="btn small">Cancel</button></form></div></td></tr>
-{% else %}<tr><td colspan="6" class="muted">None.</td></tr>{% endfor %}
+{% else %}<tr><td colspan="7" class="muted">None.</td></tr>{% endfor %}
 </table></div>
 
 <h2 id="history">Trade history <small>(fills you recorded)</small></h2>
