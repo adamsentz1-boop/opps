@@ -58,7 +58,24 @@
 - [ ] Attachment handling: most solicitations put the real scope in linked documents, not the notice body
 - [ ] Tune the taxonomy against real aggregator output and measure precision/recall on a labelled sample
 
+## Done (Market Challenge risk management)
+- [x] `app/market/indicators.py`: trend, average daily move, volatility, drawdown, range position and volume
+      trend measured in Python and handed to the research agent as facts instead of a raw price array
+- [x] `app/market/risk.py`: volatility-derived stop and target, risk-per-share, and position sizing bounded by
+      a per-trade risk budget rather than by available cash
+- [x] Exit monitor: a breached stop or target raises a SELL proposal deterministically, with no model call
+- [x] Exit plan carried from proposal to position on fill, and cleared when the position goes flat
+- [x] Dashboard, proposal detail, fill form and JSON API surface stop, target, dollars at risk and a
+      portfolio-level "at risk to stops" figure; positions with no stop are flagged
+- [x] `db.ensure_columns()`: additive SQLite column upgrades so existing databases survive new columns
+- [x] 33 offline tests covering statistics, levels, sizing, exits, the fill hand-off and the schema upgrade
+
 ## Next (Market Challenge)
+- [ ] Trailing stops: raise the stop as a position moves in your favour, instead of a fixed level
+- [ ] Proposal outcome tracking: score past proposals against what actually happened, so the hit rate and the
+      average win/loss are visible and the prompts can be tuned against evidence rather than vibes
+- [ ] Backtest the entry and exit rules over historical data before risking more capital
+- [ ] Correlation check: several positions in one sector is one position wearing a disguise
 - [ ] Price history / sparkline on the dashboard from `market_snapshots`
 - [ ] Optional news/fundamentals inputs for MarketResearchAgent (owner-supplied only; still never fetched by agents)
 - [ ] Trailing-stop / take-profit *reminders* (proposals only, still owner-executed)

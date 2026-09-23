@@ -72,10 +72,15 @@ def market_dashboard(request: Request, db: Session = Depends(get_db)):
         .order_by(TradeProposal.updated_at.desc()).limit(10).all()
     watch_count = db.query(MarketWatchlist).filter(MarketWatchlist.enabled.is_(True)).count()
     bar = max(0.0, min(100.0, state["goal_progress_pct"]))
+    # What the portfolio loses from here if every stop is hit. The number that matters most on a small account.
+    open_risk = round(sum(((p.current_price or p.average_cost) - p.stop_price) * p.quantity
+                          for p in positions
+                          if p.stop_price and (p.current_price or p.average_cost) > p.stop_price), 2)
+    unprotected = [p.ticker for p in positions if not p.stop_price]
     return templates.TemplateResponse(request, "market.html", _market_ctx(
         request, db, state=state, positions=positions, snaps=snaps, awaiting=awaiting, approved=approved, fills=fills,
         runs=runs, history=history, recent=recent, watch_count=watch_count, bar=bar, sched=market_scheduler_status(),
-        rules=UNIVERSE_RULES))
+        rules=UNIVERSE_RULES, open_risk=open_risk, unprotected=unprotected))
 
 
 @router.post("/scan", dependencies=[Depends(require_market_enabled)])

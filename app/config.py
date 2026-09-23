@@ -69,6 +69,14 @@ class Settings(BaseSettings):
     market_max_position_pct: float = 60.0
     market_max_single_trade_pct: float = 60.0
     market_min_cash_reserve_pct: float = 0.0
+    # Risk management: every entry carries a stop, and size is bounded by the loss at that stop.
+    market_max_risk_per_trade_pct: float = 10.0   # % of portfolio value lost if the stop is hit
+    market_stop_move_multiple: float = 2.5        # stop sits N average daily moves below entry
+    market_min_stop_pct: float = 5.0
+    market_max_stop_pct: float = 25.0
+    market_reward_risk_target: float = 2.0        # target distance = N x stop distance
+    market_history_days: int = 60                 # price history fetched for the statistics
+    market_exit_monitor_enabled: bool = True      # propose exits when a stop or target is breached
     market_scan_enabled: bool = True
     market_scan_interval_minutes: int = 60
     market_proposal_ttl_hours: int = 72

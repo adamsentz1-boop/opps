@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text,
-                        UniqueConstraint, event)
+                        UniqueConstraint, event, text)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -450,6 +450,10 @@ class MarketPosition(Base):
     current_price: Mapped[float | None] = mapped_column(Float)
     market_value: Mapped[float] = mapped_column(Float, default=0.0)
     unrealized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
+    # Exit plan carried over from the proposal that opened the position. Advisory: a stop is only real
+    # once the owner enters it with their broker. The scan proposes an exit when one is breached.
+    stop_price: Mapped[float | None] = mapped_column(Float)
+    target_price: Mapped[float | None] = mapped_column(Float)
     opened_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
@@ -487,6 +491,13 @@ class TradeProposal(Base):
     expected_upside_pct: Mapped[float] = mapped_column(Float, default=0.0)
     expected_downside_pct: Mapped[float] = mapped_column(Float, default=0.0)
     risk_reward_ratio: Mapped[float] = mapped_column(Float, default=0.0)
+    # Exit plan and the measured statistics behind it (app/market/risk.py, app/market/indicators.py).
+    stop_price: Mapped[float | None] = mapped_column(Float)
+    target_price: Mapped[float | None] = mapped_column(Float)
+    # server_default lets these be added to a database that already has this table (see db.ensure_columns)
+    risk_amount: Mapped[float] = mapped_column(Float, default=0.0, server_default=text("0"))
+    exit_plan: Mapped[dict] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
+    price_stats: Mapped[dict] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
     portfolio_before: Mapped[dict] = mapped_column(JSON, default=dict)
     portfolio_after: Mapped[dict] = mapped_column(JSON, default=dict)
     market_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)

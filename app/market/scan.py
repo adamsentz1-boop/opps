@@ -19,7 +19,9 @@ from app.config import get_settings
 from app.enums import ChallengeStatus, TradeProposalStatus as TS, TradeSide
 from app.llm import LLMClient, LLMError
 from app.market import portfolio as ledger
+from app.market import risk as risk_module
 from app.market.data import get_provider, provider_name, refresh_quotes
+from app.market.indicators import PriceStats, compute_stats
 from app.market.universe import check_universe, normalise_ticker
 from app.models import MarketSnapshot, MarketWatchlist, TradeProposal, TradingChallenge, utcnow
 from app.schemas import MarketResearchOutput, PortfolioDecisionOutput
@@ -76,9 +78,15 @@ def expire_stale_proposals(db: Session, challenge: TradingChallenge) -> int:
 
 
 # --------------------------------------------------------------------------- proposal creation (validated)
+def _floor(value: float) -> float:
+    factor = 10 ** ledger.QTY_DP
+    return int(max(0.0, value) * factor) / factor
+
+
 def propose_from_decision(db: Session, challenge: TradingChallenge, decision: PortfolioDecisionOutput,
                           research_by_ticker: dict[str, dict[str, Any]], snapshots: dict[str, MarketSnapshot],
-                          *, agent: str = "PortfolioAgent") -> TradeProposal | None:
+                          *, agent: str = "PortfolioAgent",
+                          stats: dict[str, PriceStats] | None = None) -> TradeProposal | None:
     """Turn an agent decision into a TradeProposal, or None (HOLD, duplicate, or fails the hard rules)."""
     if decision.action == "HOLD":
         log_event(db, agent=agent, action="market.portfolio.hold", object_type="trading_challenge",
@@ -103,8 +111,20 @@ def propose_from_decision(db: Session, challenge: TradingChallenge, decision: Po
     price = float(snap.price)
     quantity = round(float(decision.quantity or 0.0), ledger.QTY_DP)
     adjusted = False
+    levels = None
+    ticker_stats = (stats or {}).get(ticker)
     if side == TradeSide.BUY.value:
-        cap = ledger.max_buy_quantity(db, challenge, ticker, price)
+        # Every entry gets an exit plan first, then the size is whatever keeps the loss at that stop inside
+        # the per-trade risk budget. Cash is the outer bound, risk is usually the binding one.
+        rl = ledger.risk_limits(db)
+        levels = risk_module.compute_levels(price, ticker_stats, stop_move_multiple=rl["stop_move_multiple"],
+                                            min_stop_pct=rl["min_stop_pct"], max_stop_pct=rl["max_stop_pct"],
+                                            reward_risk_target=rl["reward_risk_target"])
+        value = challenge.current_portfolio_value or challenge.cash_balance
+        cash_cap = ledger.max_buy_quantity(db, challenge, ticker, price)
+        risk_cap = _floor(risk_module.max_quantity_for_risk(value, price, levels.stop_price,
+                                                            rl["max_risk_per_trade_pct"]))
+        cap = min(cash_cap, risk_cap)
         if quantity <= 0 or quantity > cap:
             quantity, adjusted = cap, True
     else:
@@ -117,6 +137,7 @@ def propose_from_decision(db: Session, challenge: TradingChallenge, decision: Po
                   object_id=challenge.id, details={"ticker": ticker, "side": side, "reason": "; ".join(problems)})
         return None
     total = round(quantity * price, 2)
+    at_risk = risk_module.risk_amount(quantity, price, levels.stop_price) if levels else 0.0
     before = ledger.portfolio_state(db, challenge)
     cash_after = round(challenge.cash_balance - total, 2) if side == "BUY" else round(challenge.cash_balance + total, 2)
     after = {"cash": cash_after, "estimated_portfolio_value": before["portfolio_value"],
@@ -137,6 +158,10 @@ def propose_from_decision(db: Session, challenge: TradingChallenge, decision: Po
         expected_upside_pct=float(decision.expected_upside_pct or research.get("expected_upside_pct") or 0),
         expected_downside_pct=float(decision.expected_downside_pct or research.get("expected_downside_pct") or 0),
         risk_reward_ratio=float(decision.risk_reward_ratio or research.get("risk_reward_ratio") or 0),
+        stop_price=levels.stop_price if levels else None,
+        target_price=levels.target_price if levels else None,
+        risk_amount=at_risk, exit_plan=levels.as_dict() if levels else {},
+        price_stats=ticker_stats.as_dict() if ticker_stats else {},
         portfolio_before={k: v for k, v in before.items() if k in ("cash", "positions_value", "portfolio_value",
                                                                      "goal_progress_pct", "days_remaining", "positions")},
         portfolio_after=after,
@@ -151,30 +176,111 @@ def propose_from_decision(db: Session, challenge: TradingChallenge, decision: Po
     log_event(db, agent=agent, action="market.trade.proposed", object_type="trade_proposal", object_id=proposal.id,
               previous_state=TS.PROPOSED.value, new_state=proposal.status, human_approval_required=True,
               details={"ticker": ticker, "side": side, "quantity": quantity, "estimated_price": price,
-                       "estimated_total": total, "confidence": proposal.confidence, "adjusted": adjusted})
+                       "estimated_total": total, "confidence": proposal.confidence, "adjusted": adjusted,
+                       "stop_price": proposal.stop_price, "target_price": proposal.target_price,
+                       "risk_amount": at_risk})
     try:
         from app.notifications import notify_system
+        risk_line = (f" Risk if stopped out: ${at_risk:,.2f} (stop ${proposal.stop_price:,.2f})."
+                     if proposal.stop_price else "")
         notify_system(db, f"Market Challenge: proposed {side} {ticker}",
-                      f"{side} {quantity:g} {ticker} @ ~${price:,.2f} (${total:,.2f}). Awaiting your approval at /market.",
-                      level="opportunity")
+                      f"{side} {quantity:g} {ticker} @ ~${price:,.2f} (${total:,.2f}).{risk_line} "
+                      f"Awaiting your approval at /market.", level="opportunity")
     except Exception:  # noqa: BLE001 - notifications are best-effort
         log.debug("notification failed", exc_info=True)
     return proposal
 
 
+# --------------------------------------------------------------------------- exit monitor
+def propose_exits(db: Session, challenge: TradingChallenge, snapshots: dict[str, MarketSnapshot],
+                  *, agent: str = "ExitMonitor") -> list[TradeProposal]:
+    """Propose a SELL for any open position whose stop or target has been breached.
+
+    Deliberately deterministic: an exit is a level that was decided when the position was opened, so it does
+    not wait on a model call, cannot be talked out of itself, and still cannot sell anything. It creates a
+    proposal the owner approves and executes, exactly like an entry.
+    """
+    if not get_settings().market_exit_monitor_enabled:
+        return []
+    created: list[TradeProposal] = []
+    for pos in ledger.open_positions(challenge):
+        if not (pos.stop_price or pos.target_price):
+            continue
+        snap = snapshots.get(pos.ticker)
+        price = float(snap.price) if snap else pos.current_price
+        if not price:
+            continue
+        signal = risk_module.exit_signal(price, pos.stop_price, pos.target_price)
+        if signal is None:
+            continue
+        if has_active_proposal(db, challenge, pos.ticker, TradeSide.SELL.value):
+            log_event(db, agent=agent, action="market.trade.duplicate_skipped", object_type="trading_challenge",
+                      object_id=challenge.id, details={"ticker": pos.ticker, "side": "SELL", "signal": signal})
+            continue
+        level = float(pos.stop_price if signal == "stop" else pos.target_price)
+        quantity = round(pos.quantity, ledger.QTY_DP)
+        reason = risk_module.exit_reason(signal, pos.ticker, price, level, pos.average_cost)
+        realised = round((price - pos.average_cost) * quantity, 2)
+        before = ledger.portfolio_state(db, challenge)
+        ttl = timedelta(hours=max(1, get_settings().market_proposal_ttl_hours))
+        proposal = TradeProposal(
+            challenge_id=challenge.id, ticker=pos.ticker, side=TradeSide.SELL.value, quantity=quantity,
+            estimated_price=price, estimated_total=round(quantity * price, 2),
+            thesis=f"Planned exit: {signal} level reached.", reason_for_trade=reason,
+            risks=["Price may move further before you can execute; the fill will differ from this estimate.",
+                   "This is the exit plan set when the position was opened, not a new forecast."],
+            time_horizon="immediate", confidence=90 if signal == "stop" else 80,
+            portfolio_before={k: v for k, v in before.items()
+                              if k in ("cash", "positions_value", "portfolio_value", "goal_progress_pct")},
+            portfolio_after={"cash": round(challenge.cash_balance + quantity * price, 2),
+                             "estimated_realised_pnl": realised},
+            market_snapshot=({"snapshot_id": snap.id, "price": price, "previous_close": snap.previous_close,
+                              "captured_at": snap.captured_at.isoformat(), "provider": snap.provider}
+                             if snap else {"price": price, "source": "last known position price"}),
+            exit_plan={"signal": signal, "level": level, "average_cost": pos.average_cost,
+                       "estimated_realised_pnl": realised},
+            status=TS.AWAITING_APPROVAL.value, created_by=agent, expires_at=utcnow() + ttl,
+        )
+        db.add(proposal)
+        db.flush()
+        created.append(proposal)
+        log_event(db, agent=agent, action="market.exit.proposed", object_type="trade_proposal",
+                  object_id=proposal.id, new_state=proposal.status, human_approval_required=True,
+                  details={"ticker": pos.ticker, "signal": signal, "level": level, "price": price,
+                           "quantity": quantity, "estimated_realised_pnl": realised})
+        try:
+            from app.notifications import notify_system
+            notify_system(db, f"Market Challenge: {signal.upper()} hit on {pos.ticker}",
+                          f"{pos.ticker} at ${price:,.2f} reached its {signal} of ${level:,.2f}. "
+                          f"A SELL of {quantity:g} share(s) is awaiting your approval at /market.",
+                          level="warning" if signal == "stop" else "opportunity")
+        except Exception:  # noqa: BLE001 - notifications are best-effort
+            log.debug("notification failed", exc_info=True)
+    return created
+
+
 # --------------------------------------------------------------------------- research helpers
-def research_ticker(db: Session, challenge: TradingChallenge, snap: MarketSnapshot, *, llm: LLMClient | None = None,
-                    owner_notes: str = "") -> MarketResearchOutput:
-    history: list[dict] = []
+def price_history(ticker: str, days: int | None = None) -> list[dict]:
+    """Price history for the statistics. Never raises: no history simply means weaker statistics."""
+    days = days or get_settings().market_history_days
     try:
-        history = get_provider().get_history(snap.ticker, days=30)
+        return get_provider().get_history(ticker, days=days)
     except Exception as exc:  # noqa: BLE001
-        log.info("history unavailable for %s: %s", snap.ticker, exc)
+        log.info("history unavailable for %s: %s", ticker, exc)
+        return []
+
+
+def research_ticker(db: Session, challenge: TradingChallenge, snap: MarketSnapshot, *, llm: LLMClient | None = None,
+                    owner_notes: str = "", stats: PriceStats | None = None) -> MarketResearchOutput:
+    history = price_history(snap.ticker)
+    stats = stats or compute_stats(history, current_price=snap.price)
     pos = next((p for p in challenge.positions if p.ticker == snap.ticker and p.quantity > 0), None)
     position = None if pos is None else {"quantity": pos.quantity, "average_cost": pos.average_cost,
-                                          "market_value": pos.market_value, "unrealized_pnl": pos.unrealized_pnl}
+                                          "market_value": pos.market_value, "unrealized_pnl": pos.unrealized_pnl,
+                                          "stop_price": pos.stop_price, "target_price": pos.target_price}
     out = MarketResearchAgent(llm).run(db, challenge, snap, history=history, owner_notes=owner_notes,
-                                       position=position, days_remaining=ledger.days_remaining(challenge))
+                                       position=position, days_remaining=ledger.days_remaining(challenge),
+                                       stats=stats.as_dict())
     log_event(db, agent="MarketResearchAgent", action="market.research.generated", object_type="market_snapshot",
               object_id=snap.id, details={"ticker": snap.ticker, "confidence": out.confidence,
                                           "risk_reward_ratio": out.risk_reward_ratio, "avoid_trade": out.avoid_trade,
@@ -190,7 +296,7 @@ def run_market_scan(db: Session, *, trigger: str = "scheduler", tickers: list[st
     challenge = ledger.get_or_create_challenge(db)
     result: dict[str, Any] = {"trigger": trigger, "provider": provider_name(), "tickers": [], "data_errors": [],
                               "research": 0, "research_errors": [], "proposal_id": None, "decision": None,
-                              "expired": 0, "skipped": None}
+                              "expired": 0, "exits": [], "skipped": None}
     if not settings.market_challenge_enabled:
         result["skipped"] = "MARKET_CHALLENGE_ENABLED=false"
         return result
@@ -222,7 +328,16 @@ def run_market_scan(db: Session, *, trigger: str = "scheduler", tickers: list[st
     ledger.recalculate(db, challenge, prices)
     ledger.take_snapshot(db, challenge, reason="scan")
 
-    # 2. research each candidate (only tickers the owner listed; held tickers are researched for SELL decisions)
+    # 2. exits before entries: a breached stop matters more than any new idea, and needs no model call
+    exits = propose_exits(db, challenge, snapshots)
+    result["exits"] = [{"id": p.id, "ticker": p.ticker, "signal": p.exit_plan.get("signal")} for p in exits]
+
+    # 3. measure each candidate's price behaviour in Python before any agent sees it
+    stats: dict[str, PriceStats] = {}
+    for ticker, snap in snapshots.items():
+        stats[ticker] = compute_stats(price_history(ticker), current_price=snap.price)
+
+    # 4. research each candidate (only tickers the owner listed; held tickers are researched for SELL decisions)
     llm = llm or market_llm_client()
     research_out: list[dict[str, Any]] = []
     for ticker in universe:
@@ -235,7 +350,8 @@ def run_market_scan(db: Session, *, trigger: str = "scheduler", tickers: list[st
                       object_id=snap.id, details={"ticker": ticker, "reason": why})
             continue
         try:
-            out = research_ticker(db, challenge, snap, llm=llm, owner_notes=(watch[ticker].notes if ticker in watch else ""))
+            out = research_ticker(db, challenge, snap, llm=llm, stats=stats.get(ticker),
+                                  owner_notes=(watch[ticker].notes if ticker in watch else ""))
             research_out.append(out.model_dump())
             result["research"] += 1
         except LLMError as exc:
@@ -244,7 +360,7 @@ def run_market_scan(db: Session, *, trigger: str = "scheduler", tickers: list[st
             log.error("research failed for %s: %s\n%s", ticker, exc, traceback.format_exc())
             result["research_errors"].append(f"{ticker}: {type(exc).__name__}: {exc}")
 
-    # 3. portfolio decision
+    # 5. portfolio decision
     proposal = None
     if research_out:
         state = ledger.portfolio_state(db, challenge)
@@ -255,7 +371,8 @@ def run_market_scan(db: Session, *, trigger: str = "scheduler", tickers: list[st
             decision = PortfolioAgent(llm).run(db, state=state, limits=lim, research=research_out, prices=prices,
                                                active_proposals=active, force_hold=force_hold)
             result["decision"] = decision.model_dump()
-            proposal = propose_from_decision(db, challenge, decision, {r["ticker"]: r for r in research_out}, snapshots)
+            proposal = propose_from_decision(db, challenge, decision, {r["ticker"]: r for r in research_out},
+                                             snapshots, stats=stats)
         except LLMError as exc:
             result["research_errors"].append(f"PortfolioAgent: {exc}")
     result["proposal_id"] = proposal.id if proposal else None
@@ -288,6 +405,18 @@ def reanalyze_proposal(db: Session, proposal: TradeProposal, *, llm: LLMClient |
         else:
             owned = next((p.quantity for p in challenge.positions if p.ticker == proposal.ticker), 0.0)
             qty = min(qty, owned)
+        if proposal.side == "BUY":
+            rl = ledger.risk_limits(db)
+            stats_obj = compute_stats(price_history(proposal.ticker), current_price=price)
+            levels = risk_module.compute_levels(price, stats_obj, stop_move_multiple=rl["stop_move_multiple"],
+                                                min_stop_pct=rl["min_stop_pct"], max_stop_pct=rl["max_stop_pct"],
+                                                reward_risk_target=rl["reward_risk_target"])
+            qty = min(qty, _floor(risk_module.max_quantity_for_risk(
+                challenge.current_portfolio_value or challenge.cash_balance, price, levels.stop_price,
+                rl["max_risk_per_trade_pct"])))
+            proposal.stop_price, proposal.target_price = levels.stop_price, levels.target_price
+            proposal.exit_plan, proposal.price_stats = levels.as_dict(), stats_obj.as_dict()
+            proposal.risk_amount = risk_module.risk_amount(qty, price, levels.stop_price)
         proposal.quantity, proposal.estimated_price, proposal.estimated_total = qty, price, round(qty * price, 2)
         proposal.thesis = decision.thesis or out.summary
         proposal.reason_for_trade = decision.reason_for_trade

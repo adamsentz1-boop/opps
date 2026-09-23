@@ -15,6 +15,11 @@
 <label>Notes</label><input type="text" name="notes" placeholder="order id, broker, partial fill…">
 <div style="margin-top:10px"><button class="btn approve">RECORD FILL</button></div>
 </form></div>
+{% if p.stop_price and p.side == 'BUY' %}
+<div class="notice" style="border-color:var(--warn);grid-column:1/-1"><strong class="warn">Enter the stop at your broker.</strong>
+The approved plan puts a stop at <strong>{{ p.stop_price|money2 }}</strong> and a target at <strong>{{ p.target_price|money2 }}</strong>.
+A stop recorded here only tells this dashboard when to propose an exit; it does not protect the position. Place it with your broker when you place the trade.</div>
+{% endif %}
 <div class="card"><strong>Checks applied when you save</strong>
 <ul class="tight">
 <li>BUY: quantity × price + fees must not exceed cash {{ challenge.cash_balance|money2 }} (no negative cash).</li>

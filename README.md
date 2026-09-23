@@ -144,6 +144,15 @@ MARKET DATA (yfinance, read-only) ──► MarketResearchAgent ──► Portfo
 * Universe (V1): long-only cash account, ordinary stocks and ETFs, fractional shares; no options, futures, forex,
   crypto, leveraged/inverse products, short selling, margin, borrowing or negative cash. Every proposal and every
   fill is re-checked deterministically in Python (`app/market/portfolio.py`); agents never mutate the ledger.
+* **Every entry carries an exit plan, and size is bounded by risk.** A stop is derived from how much the
+  security actually moves day to day (`app/market/indicators.py`), then the position is sized so that being
+  stopped out costs at most `MARKET_MAX_RISK_PER_TRADE_PCT` of portfolio value (`app/market/risk.py`). A
+  volatile name therefore gets a wider stop *and* a smaller position. The model proposes the idea; the
+  arithmetic that decides how much money is exposed is done in Python and is fully tested.
+* **Open positions are watched.** When a stop or target is breached, the scan raises a SELL proposal with no
+  model call at all, because an exit is a level decided when the position was opened. Like every other
+  proposal it needs your approval and your manual execution. The dashboard shows a portfolio-level
+  "at risk to stops" figure and flags any position with no stop.
 * Approvals reuse the same immutable `approvals` table (`object_type = "market_trade"`). Approving records the
   decision and shows *"Approved — execute this trade manually with your broker, then record the fill."*
 * A scheduled scan (`MARKET_SCAN_ENABLED`, `MARKET_SCAN_INTERVAL_MINUTES`) and the **RUN MARKET SCAN** button
@@ -153,7 +162,12 @@ MARKET DATA (yfinance, read-only) ──► MarketResearchAgent ──► Portfo
   The agents are told the target is an optimisation objective, never a guarantee, and to never fabricate prices,
   news, earnings or ratings. Provider text is wrapped as untrusted data.
 
-This is a personal, experimental portfolio challenge, not investment advice.
+A stop recorded here only tells the dashboard when to propose an exit. **It does not protect the position.**
+Place the stop with your broker when you place the trade, and remember a gap can skip straight through it.
+
+This is a personal, experimental portfolio challenge, not investment advice. The target is an optimisation
+objective, never a forecast: going from $200 to $1,000 by January 2027 implies a compounding return far beyond
+what any systematic approach reliably delivers, and the software is built to say so rather than chase it.
 
 ## Security model
 
@@ -192,7 +206,8 @@ app/
   agents/            agent roles (incl. market_research, portfolio)   prompts/  editable system prompts
   llm/               Claude client + mock
   pipeline/          rejection, scoring, runner
-  market/            Market Challenge: data.py (providers), universe.py, portfolio.py (ledger), approvals.py, scan.py
+  market/            Market Challenge: data.py (providers), universe.py, indicators.py (price statistics),
+                     risk.py (exit levels + position sizing), portfolio.py (ledger), approvals.py, scan.py
   approvals.py       approval system   work_orders.py  execution lifecycle
   audit.py, costs.py, metrics.py, notifications/, scheduler.py, settings_service.py
   web/               routes, JSON API, market_routes/market_api, templates, static

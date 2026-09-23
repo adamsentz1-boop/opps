@@ -1,6 +1,7 @@
 """Database engine and session management (SQLite via SQLAlchemy)."""
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -9,6 +10,9 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_settings
+
+
+log = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -46,12 +50,57 @@ def get_sessionmaker() -> sessionmaker:
     return _SessionLocal
 
 
+def ensure_columns() -> list[str]:
+    """Add columns that exist on the models but not yet in an existing SQLite database.
+
+    `create_all` creates missing tables but never alters existing ones, so a release that adds a column to a
+    table someone already has would fail at query time. This closes that gap for the only case SQLite can do
+    safely and non-destructively: ADD COLUMN.
+
+    Deliberately additive only. Nothing is dropped, renamed or retyped, and a NOT NULL column without a
+    server default is skipped with a warning rather than guessed at, because SQLite cannot backfill one.
+    Real migrations still belong in Alembic once the schema settles; this keeps existing databases working
+    in the meantime. Returns the list of applied changes.
+    """
+    from sqlalchemy import inspect, text
+
+    engine = get_engine()
+    if not engine.url.get_backend_name().startswith("sqlite"):
+        return []      # other backends get real migrations, not this
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    applied: list[str] = []
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue      # create_all handles brand new tables
+            present = {c["name"] for c in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in present:
+                    continue
+                if not column.nullable and column.server_default is None:
+                    log.warning("cannot add NOT NULL column %s.%s without a server default; skipping",
+                                table.name, column.name)
+                    continue
+                ddl_type = column.type.compile(engine.dialect)
+                sql = f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {ddl_type}'
+                if column.server_default is not None:
+                    default = getattr(column.server_default, "arg", column.server_default)
+                    sql += f" DEFAULT {default if isinstance(default, str) else default.text}"
+                conn.execute(text(sql))
+                applied.append(f"{table.name}.{column.name}")
+    if applied:
+        log.info("schema: added missing column(s) %s", ", ".join(applied))
+    return applied
+
+
 def init_db() -> None:
-    """Create all tables and seed default settings."""
+    """Create all tables, add any newly-introduced columns, and seed default settings."""
     from app import models  # noqa: F401  (register models)
     from app.settings_service import seed_default_settings
 
     Base.metadata.create_all(bind=get_engine())
+    ensure_columns()
     with session_scope() as db:
         seed_default_settings(db)
         if get_settings().market_challenge_enabled:
