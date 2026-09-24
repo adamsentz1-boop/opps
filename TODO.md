@@ -96,6 +96,30 @@
 - [x] `scripts/backtest.py` CLI with a readable comparison table and optional JSON export
 - [x] 26 offline tests (152 total) including the look-ahead guarantee and the never-spend-what-you-lack check
 
+## Done (getting it running)
+- [x] `start.sh`: fresh clone to a served app in one command. Creates `.env`, builds a virtualenv, installs
+      dependencies, migrates the database, runs preflight, then serves. Idempotent, with `--check`,
+      `--offline`, `--seed`, `--port`, `--docker` and `--test`.
+- [x] `scripts/doctor.py`: preflight that answers whether a real stock quote can actually be fetched, plus
+      Python, dependencies, `.env`, database and schema, Claude live or mocked, watchlist and scheduler.
+      Every problem carries the command that fixes it, and secrets are never printed.
+- [x] Verified end to end from a genuinely fresh clone on Python 3.13
+- [x] 13 offline tests (165 total) including a leak test that asserts no API key reaches the output
+
+## Done (container hardening)
+- [x] `.dockerignore`: keeps the host virtualenv, `.git`, the live database and `.env` out of the image.
+      Deliberately excludes only what is harmful, with no blanket `*.md` rule, since the agent prompts are
+      read from disk on every call.
+- [x] Dockerfile runs as a non-root user whose uid/gid are build args, so files written to the bind-mounted
+      `./data` belong to the host user instead of root
+- [x] compose: `.env` no longer required to exist, healthcheck `start_period` for the first-boot migration,
+      capped log rotation, overridable published port
+- [x] `.gitattributes` forces LF on shell scripts, so a Windows clone does not produce `bad interpreter: ^M`
+- [x] `./start.sh --docker` builds for the current uid, polls health without requiring curl, and prints the
+      permission fix when the ledger is unwritable
+- [x] README: Docker section covering everyday commands, what persists, and a troubleshooting table
+- [x] 30 static container tests (195 total); a real `docker build` still needs a daemon
+
 ## Next (Market Challenge)
 - [ ] Trailing stops: raise the stop as a position moves in your favour, instead of a fixed level. The
       backtest shows fixed targets cut winners short in a trending market, so this is the obvious next test.

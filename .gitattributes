@@ -1,0 +1,15 @@
+# Shell scripts MUST keep LF endings. A Windows clone with core.autocrlf=true otherwise rewrites
+# them to CRLF, and the container then fails with "bad interpreter: /usr/bin/env bash^M".
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Normalise everything else, but leave binaries alone.
+* text=auto
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.db binary

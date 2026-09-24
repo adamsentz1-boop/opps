@@ -12,27 +12,125 @@ government bids, RFPs/RFQs and post-award work execution; the data model already
 ## Quick start
 
 ```bash
-cp .env.example .env            # add ANTHROPIC_API_KEY, or leave blank for offline MOCK mode
-pip install -r requirements.txt
-python -m scripts.seed          # 15 fake opportunities through the pipeline (spends tokens with a real key)
-uvicorn app.main:app --reload   # http://localhost:8000
+./start.sh
 ```
 
-Or with Docker:
+That is the whole thing. From a fresh clone it creates `.env`, builds a virtualenv, installs the
+dependencies, creates and upgrades the database, runs a preflight check and serves on
+http://localhost:8000. It is safe to re-run: anything that already exists is left alone.
 
 ```bash
-cp .env.example .env
-docker compose up --build       # http://localhost:8000
-docker compose exec opportunity-engine python -m scripts.seed      # optional demo data
+./start.sh --check      # preflight only, do not start the server
+./start.sh --offline    # skip the live market-data probe (faster, no network)
+./start.sh --seed       # load demo freelance opportunities first
+./start.sh --port 9000  # serve somewhere else
+./start.sh --docker     # build and run with docker compose instead
+./start.sh --test       # run the test suite and exit
 ```
 
-Remove the demo data later with `python -m scripts.seed --purge` (or delete `data/opportunity_engine.db`).
+It runs in **offline MOCK mode** until you edit `.env`. Two keys decide how much is real:
+
+| key | blank / mock | set |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | deterministic keyword agents, no network, free | real Claude analysis |
+| `MARKET_MOCK` | `true` gives deterministic fake prices | `false` fetches real quotes via yfinance |
+
+**Run the preflight before trusting anything.** `./start.sh --check` (or `python -m scripts.doctor`) reports
+your Python and dependencies, the database and whether its schema is current, whether Claude is live or
+mocked, **whether a real stock quote can actually be fetched**, and whether the watchlist has anything in it.
+Every problem comes with the command that fixes it. Secrets are never printed.
+
+```
+[  ok  ] database      sqlite:///./data/opportunity_engine.db
+[  ok  ] schema        current
+[ warn ] claude        MOCK mode (no ANTHROPIC_API_KEY)
+[ FAIL ] market data   yfinance could not fetch SPY: MarketDataError: No price available
+                       -> check outbound network access, or set MARKET_MOCK=true to work offline
+[ warn ] watchlist     empty, so scans have nothing to research
+```
+
+### First five minutes
+
+1. `./start.sh` and open http://localhost:8000
+2. Click **Market Challenge**, then **Watchlist & settings**, and add a few tickers. The watchlist ships
+   empty on purpose: the system never seeds investment recommendations.
+3. Back on `/market`, press **RUN MARKET SCAN**. Refresh after a moment for a proposal.
+4. Read the trade card, then **APPROVE**, **REJECT** or **EDIT**. Approving places no order.
+5. If you approve, trade it yourself at your broker, **enter the stop there too**, then press
+   **RECORD FILL** so the ledger matches reality.
+
+Before risking money, replay the rules over history and compare them against simply holding:
+
+```bash
+python -m scripts.backtest --tickers SPY,QQQ,NVDA --days 500
+```
+
+Demo freelance data: `python -m scripts.seed`, removed later with `python -m scripts.seed --purge`
+(or delete `data/opportunity_engine.db`).
 
 Tests:
 
 ```bash
 python -m pytest -q
 ```
+
+### Doing it by hand
+
+```bash
+cp .env.example .env
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python -m scripts.doctor            # preflight
+uvicorn app.main:app --reload       # http://localhost:8000
+```
+
+## Running it in Docker
+
+```bash
+./start.sh --docker
+```
+
+That builds the image, starts it detached, waits for the health endpoint and prints where to go. It builds
+for your own user id so the database written to `./data` belongs to you rather than to root. Or do it by
+hand:
+
+```bash
+cp .env.example .env        # optional; without it the app runs in offline MOCK mode
+docker compose up --build -d
+```
+
+Everyday commands:
+
+```bash
+docker compose exec opportunity-engine python -m scripts.doctor          # preflight inside the container
+docker compose exec opportunity-engine python -m scripts.backtest --tickers SPY,QQQ --days 500
+docker compose exec opportunity-engine python -m pytest -q               # prove the container is sane
+docker compose logs -f                                                   # follow the scheduler
+docker compose down                                                      # stop; your ledger is kept
+docker compose up -d --build                                             # after pulling new code
+```
+
+**Your data lives on the host, not in the container.** `./data/opportunity_engine.db` holds the cash,
+positions and recorded fills, bind-mounted in. It survives `docker compose down`, rebuilds and image
+deletion. Back it up by copying that one file. `./app/prompts` is mounted too, so you can edit an agent
+prompt and the next run picks it up without a rebuild.
+
+The container restarts unless you stop it, so on a machine you leave running the scheduler keeps scanning.
+Logs are capped at three 10MB files so months of uptime cannot fill the disk.
+
+### When Docker misbehaves
+
+| symptom | cause and fix |
+|---|---|
+| `permission denied` on the database | `./data` belongs to another user. `sudo chown -R $(id -u):$(id -g) data workspace` then rebuild. |
+| `bad interpreter: /usr/bin/env bash^M` | Cloned on Windows with `core.autocrlf=true`. `git config core.autocrlf input` and re-clone; `.gitattributes` prevents it going forward. |
+| port 8000 already taken | `PORT=9000 docker compose up -d`, or `./start.sh --docker --port 9000` |
+| container is up but `/market` is empty | The watchlist ships empty. Add tickers at `/market/settings`. |
+| market data row FAILs in the doctor | The container cannot reach the internet, or yfinance is blocked. Until it is fixed, set `MARKET_MOCK=true` in `.env` to work offline. |
+| changes to code do nothing | Only `./data`, `./workspace` and `./app/prompts` are mounted. Everything else needs `docker compose up -d --build`. |
+
+Timestamps are UTC everywhere, in the database and in the logs, so a fill recorded at 9am Eastern reads as
+13:00 or 14:00 depending on the season. That is deliberate: one clock, no daylight-saving ambiguity.
 
 ## What you see
 
@@ -236,6 +334,8 @@ app/
   approvals.py       approval system   work_orders.py  execution lifecycle
   audit.py, costs.py, metrics.py, notifications/, scheduler.py, settings_service.py
   web/               routes, JSON API, market_routes/market_api, templates, static
+start.sh             one command: set up, preflight, run
+scripts/doctor.py    preflight check, including whether real market quotes actually arrive
 scripts/seed.py      realistic fake opportunities    scripts/run_pipeline.py  one scan cycle
 scripts/backtest.py  replay the market risk rules over history against a buy-and-hold benchmark
 tests/               pytest suite (mock mode)

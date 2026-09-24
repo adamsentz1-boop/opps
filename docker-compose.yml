@@ -1,20 +1,40 @@
 services:
   opportunity-engine:
-    build: .
+    build:
+      context: .
+      args:
+        # Override so files written to ./data belong to you:
+        #   APP_UID=$(id -u) APP_GID=$(id -g) docker compose build
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    image: opportunity-engine:local
     container_name: opportunity-engine
     env_file:
-      - .env
+      # required:false so a fresh clone can `docker compose up` before .env exists. Without a key the app
+      # runs in offline MOCK mode, which is a legitimate way to look around.
+      - path: .env
+        required: false
     environment:
+      # The database lives on the bind mount below, so it survives `docker compose down` and rebuilds.
       - DATABASE_URL=sqlite:////app/data/opportunity_engine.db
+      - HOST=0.0.0.0
+      - PORT=8000
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:8000"
     volumes:
-      - ./data:/app/data
-      - ./workspace:/app/workspace
-      - ./app/prompts:/app/app/prompts   # edit prompts without rebuilding
+      - ./data:/app/data              # the ledger: your cash, positions and recorded fills
+      - ./workspace:/app/workspace    # generated deliverables
+      - ./app/prompts:/app/app/prompts   # edit agent prompts without rebuilding
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 60s
       timeout: 5s
       retries: 3
+      # The first boot creates the database and runs the schema upgrade, so do not judge health too early.
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,36 @@
+# Keep host-specific junk and secrets out of the image. This excludes what is HARMFUL, not merely large:
+# a few hundred KB of docs is not worth the risk of excluding a file the app reads at runtime.
+# (app/prompts/*.md in particular are read on every agent call, so no blanket *.md rule here.)
+
+# A host virtualenv contains binaries built for the host machine. Copying one in bloats the image and
+# can shadow the packages pip installed inside it.
+.venv/
+venv/
+env/
+ENV/
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets never belong in an image layer. The example is kept so the image can document itself.
+.env
+.env.local
+.env.production
+
+# The ledger is bind-mounted at runtime; baking a stale copy in would shadow the real one.
+data/
+workspace/
+
+# Version control and editor noise.
+.git/
+.github/
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
