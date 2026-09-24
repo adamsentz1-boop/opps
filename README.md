@@ -173,6 +173,19 @@ MARKET DATA (yfinance, read-only) ──► MarketResearchAgent ──► Portfo
   summary is shown to the decision agent, which is told never to read a good run as licence to size up or a
   bad one as a reason to chase.
 
+* **Does any of it have an edge?** `python -m scripts.backtest` replays the deterministic rules over
+  historical prices, through the same functions the live scan uses, and always reports a buy-and-hold
+  benchmark beside the result. It tests the stop, the sizing and the exit discipline, not the agents'
+  stock picking, because replaying a model over history is slow, costly and contaminated by hindsight.
+  Every result states how backtests lie: close-only exits understate stop losses, survivorship flatters the
+  sample, and tuning the settings until the numbers look good is a curve fit rather than an edge.
+
+  The headline finding from the built-in regimes is worth knowing before you trade. In a steady bull market
+  the stops cut winners short and the rules badly underperform simply holding. In a decline they preserve a
+  meaningful fraction of the account that holding would have lost, and a trend filter that declines to trade
+  at all preserves more still. Stop discipline is insurance: it costs money in the good case and saves it in
+  the bad one.
+
 A stop recorded here only tells the dashboard when to propose an exit. **It does not protect the position.**
 Place the stop with your broker when you place the trade, and remember a gap can skip straight through it.
 
@@ -219,11 +232,12 @@ app/
   pipeline/          rejection, scoring, runner
   market/            Market Challenge: data.py (providers), universe.py, indicators.py (price statistics),
                      risk.py (exit levels + position sizing), performance.py (round trips + calibration),
-                     portfolio.py (ledger), approvals.py, scan.py
+                     backtest.py (historical replay + benchmark), portfolio.py (ledger), approvals.py, scan.py
   approvals.py       approval system   work_orders.py  execution lifecycle
   audit.py, costs.py, metrics.py, notifications/, scheduler.py, settings_service.py
   web/               routes, JSON API, market_routes/market_api, templates, static
 scripts/seed.py      realistic fake opportunities    scripts/run_pipeline.py  one scan cycle
+scripts/backtest.py  replay the market risk rules over history against a buy-and-hold benchmark
 tests/               pytest suite (mock mode)
 ```
 

@@ -83,10 +83,25 @@
       against sizing up on a good run or chasing a bad one
 - [x] 18 offline tests (126 total) including ledger reconciliation and first-in-first-out lot matching
 
+## Done (Market Challenge backtester)
+- [x] `app/market/backtest.py`: replays the deterministic rules over historical bars through the *same*
+      `indicators.py` and `risk.py` functions the live scan uses, with a shared cash pool, position limits,
+      configurable fees and slippage, and forced close-out at the last bar
+- [x] Buy-and-hold benchmark on every result, and taking zero trades is reported as abstention rather than
+      as beating the benchmark
+- [x] Four mechanical entry rules (always / trend / dip / breakout) standing in for the entry signal, since
+      replaying an LLM over history is slow, costly and contaminated by hindsight
+- [x] Look-ahead bias closed and proved by test: decisions see only bars up to and including the decision bar
+- [x] Every result carries its own caveats (close-only exits, survivorship, costs, curve fitting)
+- [x] `scripts/backtest.py` CLI with a readable comparison table and optional JSON export
+- [x] 26 offline tests (152 total) including the look-ahead guarantee and the never-spend-what-you-lack check
+
 ## Next (Market Challenge)
-- [ ] Trailing stops: raise the stop as a position moves in your favour, instead of a fixed level
-- [ ] Backtest the entry and exit rules over historical data before risking more capital
+- [ ] Trailing stops: raise the stop as a position moves in your favour, instead of a fixed level. The
+      backtest shows fixed targets cut winners short in a trending market, so this is the obvious next test.
 - [ ] Drawdown tracking and a circuit breaker: pause proposals after N consecutive losses or an X% drawdown
+- [ ] Walk-forward validation: tune on one period, verify on the next, to catch curve fitting honestly
+- [ ] Run the backtest against real yfinance history once outbound access is confirmed
 - [ ] Correlation check: several positions in one sector is one position wearing a disguise
 - [ ] Price history / sparkline on the dashboard from `market_snapshots`
 - [ ] Optional news/fundamentals inputs for MarketResearchAgent (owner-supplied only; still never fetched by agents)
