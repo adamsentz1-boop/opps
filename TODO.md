@@ -96,6 +96,16 @@
 - [x] `scripts/backtest.py` CLI with a readable comparison table and optional JSON export
 - [x] 26 offline tests (152 total) including the look-ahead guarantee and the never-spend-what-you-lack check
 
+## Done (getting it running)
+- [x] `start.sh`: fresh clone to a served app in one command. Creates `.env`, builds a virtualenv, installs
+      dependencies, migrates the database, runs preflight, then serves. Idempotent, with `--check`,
+      `--offline`, `--seed`, `--port`, `--docker` and `--test`.
+- [x] `scripts/doctor.py`: preflight that answers whether a real stock quote can actually be fetched, plus
+      Python, dependencies, `.env`, database and schema, Claude live or mocked, watchlist and scheduler.
+      Every problem carries the command that fixes it, and secrets are never printed.
+- [x] Verified end to end from a genuinely fresh clone on Python 3.13
+- [x] 13 offline tests (165 total) including a leak test that asserts no API key reaches the output
+
 ## Next (Market Challenge)
 - [ ] Trailing stops: raise the stop as a position moves in your favour, instead of a fixed level. The
       backtest shows fixed targets cut winners short in a trending market, so this is the obvious next test.
