@@ -16,6 +16,8 @@ from app.enums import TradeProposalStatus as TS
 from app.market import approvals as trade_approvals
 from app.market import portfolio as ledger
 from app.market.data import latest_snapshots, provider_name, refresh_quotes
+from app.market.performance import (confidence_calibration, performance_summary, proposal_scorecard,
+                                     round_trips)
 from app.market.scan import active_proposals, reanalyze_proposal
 from app.market.universe import UNIVERSE_RULES, is_valid_ticker, normalise_ticker
 from app.models import AgentRun, AuditLog, MarketWatchlist, PortfolioSnapshot, TradeExecution, TradeProposal
@@ -104,6 +106,17 @@ def market_refresh(db: Session = Depends(get_db)):
     if errors:
         return _redirect("/market", err="Some quotes failed: " + "; ".join(errors)[:300])
     return _redirect("/market", msg=f"Refreshed {len(snaps)} quote(s) from {provider_name()}.")
+
+
+@router.get("/performance", response_class=HTMLResponse, dependencies=[Depends(require_market_enabled)])
+def market_performance(request: Request, db: Session = Depends(get_db)):
+    """Has any of this worked? Measured from the ledger, not from the agents' own confidence."""
+    challenge = ledger.get_or_create_challenge(db)
+    trips = round_trips(db, challenge)
+    return templates.TemplateResponse(request, "market_performance.html", _market_ctx(
+        request, db, summary=performance_summary(db, challenge), calibration=confidence_calibration(db, challenge),
+        scorecard=proposal_scorecard(db, challenge),
+        trips=sorted(trips, key=lambda t: t.closed_at, reverse=True)))
 
 
 # --------------------------------------------------------------------------- proposals

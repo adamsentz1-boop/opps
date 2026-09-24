@@ -162,6 +162,17 @@ MARKET DATA (yfinance, read-only) ──► MarketResearchAgent ──► Portfo
   The agents are told the target is an optimisation objective, never a guarantee, and to never fabricate prices,
   news, earnings or ratings. Provider text is wrapped as untrusted data.
 
+* **Did any of it work?** `/market/performance` scores the record from the ledger rather than from the agents'
+  own confidence: win rate, profit factor, expectancy, and average R, where 1R is what was at stake when the
+  position was opened. Average R matters more than win rate, because losing six times in ten still makes money
+  if the winners are worth twice the losers. A **calibration table** buckets closed trades by the confidence
+  stated on the entry proposal, which answers the only question that makes confidence worth reading: are the
+  high-confidence calls actually better? A **counterfactual scorecard** prices every idea the agents had,
+  including the ones you turned down, so idea quality and decision quality can be told apart. Below five
+  closed trades the page says outright that the numbers are noise. Once there are enough, a compact, neutral
+  summary is shown to the decision agent, which is told never to read a good run as licence to size up or a
+  bad one as a reason to chase.
+
 A stop recorded here only tells the dashboard when to propose an exit. **It does not protect the position.**
 Place the stop with your broker when you place the trade, and remember a gap can skip straight through it.
 
@@ -207,7 +218,8 @@ app/
   llm/               Claude client + mock
   pipeline/          rejection, scoring, runner
   market/            Market Challenge: data.py (providers), universe.py, indicators.py (price statistics),
-                     risk.py (exit levels + position sizing), portfolio.py (ledger), approvals.py, scan.py
+                     risk.py (exit levels + position sizing), performance.py (round trips + calibration),
+                     portfolio.py (ledger), approvals.py, scan.py
   approvals.py       approval system   work_orders.py  execution lifecycle
   audit.py, costs.py, metrics.py, notifications/, scheduler.py, settings_service.py
   web/               routes, JSON API, market_routes/market_api, templates, static

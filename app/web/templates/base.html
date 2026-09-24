@@ -20,6 +20,7 @@
   <a href="/market#awaiting" class="">Awaiting approval{% if market_awaiting %}<span class="badge">{{ market_awaiting }}</span>{% endif %}</a>
   <a href="/market#positions">Positions</a>
   <a href="/market#history">Trade history</a>
+  <a href="/market/performance" class="{{ 'active' if request.url.path.startswith('/market/performance') }}">Performance</a>
   <a href="/market#agents">Agent activity</a>
   <a href="/audit?action=market" class="{{ 'active' if request.url.path.startswith('/audit') }}">Audit log</a>
   <a href="/market/settings" class="{{ 'active' if request.url.path.startswith('/market/settings') }}">Settings & watchlist</a>

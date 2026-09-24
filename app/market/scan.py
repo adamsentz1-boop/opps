@@ -368,8 +368,10 @@ def run_market_scan(db: Session, *, trigger: str = "scheduler", tickers: list[st
         active = [{"ticker": p.ticker, "side": p.side, "quantity": p.quantity, "status": p.status}
                   for p in active_proposals(db, challenge)]
         try:
+            from app.market.performance import agent_track_record
             decision = PortfolioAgent(llm).run(db, state=state, limits=lim, research=research_out, prices=prices,
-                                               active_proposals=active, force_hold=force_hold)
+                                               active_proposals=active, force_hold=force_hold,
+                                               track_record=agent_track_record(db, challenge))
             result["decision"] = decision.model_dump()
             proposal = propose_from_decision(db, challenge, decision, {r["ticker"]: r for r in research_out},
                                              snapshots, stats=stats)
