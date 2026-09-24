@@ -84,13 +84,53 @@ python -m scripts.doctor            # preflight
 uvicorn app.main:app --reload       # http://localhost:8000
 ```
 
-Or with Docker:
+## Running it in Docker
 
 ```bash
-cp .env.example .env
-docker compose up --build           # http://localhost:8000
-docker compose exec opportunity-engine python -m scripts.doctor
+./start.sh --docker
 ```
+
+That builds the image, starts it detached, waits for the health endpoint and prints where to go. It builds
+for your own user id so the database written to `./data` belongs to you rather than to root. Or do it by
+hand:
+
+```bash
+cp .env.example .env        # optional; without it the app runs in offline MOCK mode
+docker compose up --build -d
+```
+
+Everyday commands:
+
+```bash
+docker compose exec opportunity-engine python -m scripts.doctor          # preflight inside the container
+docker compose exec opportunity-engine python -m scripts.backtest --tickers SPY,QQQ --days 500
+docker compose exec opportunity-engine python -m pytest -q               # prove the container is sane
+docker compose logs -f                                                   # follow the scheduler
+docker compose down                                                      # stop; your ledger is kept
+docker compose up -d --build                                             # after pulling new code
+```
+
+**Your data lives on the host, not in the container.** `./data/opportunity_engine.db` holds the cash,
+positions and recorded fills, bind-mounted in. It survives `docker compose down`, rebuilds and image
+deletion. Back it up by copying that one file. `./app/prompts` is mounted too, so you can edit an agent
+prompt and the next run picks it up without a rebuild.
+
+The container restarts unless you stop it, so on a machine you leave running the scheduler keeps scanning.
+Logs are capped at three 10MB files so months of uptime cannot fill the disk.
+
+### When Docker misbehaves
+
+| symptom | cause and fix |
+|---|---|
+| `permission denied` on the database | `./data` belongs to another user. `sudo chown -R $(id -u):$(id -g) data workspace` then rebuild. |
+| `bad interpreter: /usr/bin/env bash^M` | Cloned on Windows with `core.autocrlf=true`. `git config core.autocrlf input` and re-clone; `.gitattributes` prevents it going forward. |
+| port 8000 already taken | `PORT=9000 docker compose up -d`, or `./start.sh --docker --port 9000` |
+| container is up but `/market` is empty | The watchlist ships empty. Add tickers at `/market/settings`. |
+| market data row FAILs in the doctor | The container cannot reach the internet, or yfinance is blocked. Until it is fixed, set `MARKET_MOCK=true` in `.env` to work offline. |
+| changes to code do nothing | Only `./data`, `./workspace` and `./app/prompts` are mounted. Everything else needs `docker compose up -d --build`. |
+
+Timestamps are UTC everywhere, in the database and in the logs, so a fill recorded at 9am Eastern reads as
+13:00 or 14:00 depending on the season. That is deliberate: one clock, no daylight-saving ambiguity.
 
 ## What you see
 

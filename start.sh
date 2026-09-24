@@ -59,19 +59,42 @@ if [[ "$USE_DOCKER" == true ]]; then
   command -v docker >/dev/null 2>&1 || die "docker is not installed or not on PATH"
   docker info >/dev/null 2>&1 || die "the docker daemon is not reachable; start Docker Desktop and retry"
   bold "Building and starting with docker compose"
+  # compose reads these: PORT publishes the host port, APP_UID/APP_GID make ./data belong to you
+  export PORT
+  if [[ -z "${APP_UID:-}" ]] && command -v id >/dev/null 2>&1; then
+    APP_UID="$(id -u)"; APP_GID="$(id -g)"
+    export APP_UID APP_GID
+    info "Building for uid ${APP_UID}:${APP_GID} so files in ./data stay yours"
+  fi
   docker compose up --build -d
+
   info "Waiting for the health endpoint..."
-  for _ in $(seq 1 60); do
-    if curl -sf "http://localhost:${PORT}/api/health" >/dev/null 2>&1; then
+  probe() {
+    if command -v curl >/dev/null 2>&1; then
+      curl -sf "http://localhost:${PORT}/api/health" >/dev/null 2>&1
+    else
+      $PYTHON - "$PORT" <<'PY' >/dev/null 2>&1
+import sys, urllib.request
+urllib.request.urlopen(f"http://localhost:{sys.argv[1]}/api/health", timeout=3)
+PY
+    fi
+  }
+  for _ in $(seq 1 90); do
+    if probe; then
+      echo
       bold "Running at http://localhost:${PORT}"
       info "Preflight:  docker compose exec opportunity-engine python -m scripts.doctor"
+      info "Backtest:   docker compose exec opportunity-engine python -m scripts.backtest --tickers SPY,QQQ"
       info "Logs:       docker compose logs -f"
-      info "Stop:       docker compose down"
+      info "Stop:       docker compose down        (your data/ ledger is kept)"
       exit 0
     fi
     sleep 1
   done
-  warn "Health check did not pass in time. Inspect with: docker compose logs"
+  warn "The health check did not pass in time."
+  info "Look at the logs:  docker compose logs --tail 50"
+  info "A 'permission denied' on the database means ./data is owned by another user. Fix with:"
+  info "  sudo chown -R \$(id -u):\$(id -g) data workspace && docker compose up -d --build"
   exit 1
 fi
 
